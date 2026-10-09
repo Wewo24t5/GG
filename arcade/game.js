@@ -509,4 +509,4 @@ document.documentElement.classList.add('ready');
 requestAnimationFrame(frame);
 
 /* test hooks (harmless in production) */
-window.__arcade = { S, act, build: (x, y, t) => { mode = t; build(x, y); }, expand, earn, spawnGold, catchGold, openCard, setMode, income };
+window.__arcade = { screen: (x, y, h = 0) => toScreen(P(x, y, h)), S, act, build: (x, y, t) => { mode = t; build(x, y); }, expand, earn, spawnGold, catchGold, openCard, setMode, income };
