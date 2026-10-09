@@ -20,7 +20,7 @@ const user = { az: 0, el: 0 }, orbitT0 = performance.now();
 function px() { return Math.min(2048, Math.round(card.clientWidth * Math.min(2, devicePixelRatio || 1))); }
 function layout() {
   const s = Math.floor(Math.min(innerWidth, innerHeight)); card.style.width = card.style.height = s + 'px';
-  hint.style.fontSize = Math.max(9, s * .0135) + 'px'; hint.style.top = (s * .0625) + 'px';   // centred on the ORIGINS title line
+  hint.style.fontSize = Math.max(7, s * .0112) + 'px'; hint.style.top = (s * .0635) + 'px';   // centred on the ORIGINS title line
   const P = px(); c2d.width = c2d.height = P; ORIGINS.draw(c2d.getContext('2d'), NO, P, { grain: true });
   if (eng) { eng.setSize(glSize(), eng.ss); cov.width = cov.height = eng.size; if (state !== '2d') frame(performance.now(), true); }
 }
