@@ -20,62 +20,71 @@ const mn = (v) => String(v).replace('-', '−'), coord = (x, y) => `(${mn(x)}, $
 const key = (x, y) => x + ',' + y;
 function fmt(n) {
   if (!isFinite(n)) return '∞';
-  if (n < 1000) return n < 10 && n % 1 ? n.toFixed(1) : Math.floor(n).toLocaleString('en-US');
+  if (n === 0) return '0';
+  if (n < .01) return n.toFixed(4);                      // a tap is worth 0.0001 Ø
+  if (n < 1) return n.toFixed(3);
+  if (n < 10) return n.toFixed(2);
+  if (n < 1000) return n.toFixed(1);
   const u = ['K', 'M', 'B', 'T', 'Qa', 'Qi', 'Sx']; let i = -1; while (n >= 1000 && i < u.length - 1) { n /= 1000; i++; }
   return (n < 10 ? n.toFixed(2) : n < 100 ? n.toFixed(1) : Math.floor(n)) + u[i];
 }
 
 /* =====================================================================================================
-   RULES
+   RULES — a long game. Paced by simulation (greedy player who visits at least daily, offline at 50 %):
+   Line ≈ 6 h · Terrace ≈ 2 days · Orbit ≈ 5 days · Spiral ≈ 2 weeks · Monolith ≈ 1.5 months ·
+   first level 10 ≈ 11 months · the whole plane (15 × 15) ≈ 5 years.
    ===================================================================================================== */
 const TYPES = [
-  { id: 'point',    name: 'Point',    cost: 15,     inc: .38,  desc: 'A single square. Every city begins with one.' },
-  { id: 'line',     name: 'Line',     cost: 160,    inc: 2,  desc: 'Two pillars and a bridge. The first distance.' },
-  { id: 'terrace',  name: 'Terrace',  cost: 1200,   inc: 7.6,   desc: 'Rings of stone stepping up toward the light.' },
-  { id: 'orbit',    name: 'Orbit',    cost: 9000,   inc: 27,   desc: 'A tower that keeps its own satellites.' },
-  { id: 'spiral',   name: 'Spiral',   cost: 70000,  inc: 110,  desc: 'Every floor turns a little. Golden angle, slowly.' },
-  { id: 'monolith', name: 'Monolith', cost: 600000, inc: 450, desc: 'Black, exact, edged in gold. Rare on any plane.' },
+  { id: 'point',    name: 'Point',    cost: .02,   inc: 2.8e-6,  desc: 'A single square. Every city begins with one.' },
+  { id: 'line',     name: 'Line',     cost: .4,    inc: 2.2e-5,  desc: 'Two pillars and a bridge. The first distance.' },
+  { id: 'terrace',  name: 'Terrace',  cost: 8,     inc: 1.85e-4, desc: 'Rings of stone stepping up toward the light.' },
+  { id: 'orbit',    name: 'Orbit',    cost: 160,   inc: 1.23e-3, desc: 'A tower that keeps its own satellites.' },
+  { id: 'spiral',   name: 'Spiral',   cost: 3200,  inc: 9.3e-3,  desc: 'Every floor turns a little. Golden angle, slowly.' },
+  { id: 'monolith', name: 'Monolith', cost: 64000, inc: 7.4e-2,  desc: 'Black, exact, edged in gold. Rare on any plane.' },
 ];
 const TYPE = Object.fromEntries(TYPES.map((t) => [t.id, t]));
-const MAXL = 5, RMAX = 7, RMIN = 2;
-const EXPAND = { 2: 300, 3: 6000, 4: 1.5e5, 5: 4e6, 6: 1.2e8 };   // paced by simulation: Orbit ≈ 13 min, Monolith ≈ 1 h, full plane ≈ 5 h of play
+const MAXL = 10, RMAX = 7, RMIN = 2, TAP = .0001, OMAX = 10;
+const EXPAND = { 2: .5, 3: 60, 4: 12000, 5: 4e6, 6: 9e8 };
 const prox = (x, y) => 1 + .6 / Math.max(1, Math.max(Math.abs(x), Math.abs(y)));          // closer to (0,0) earns more
 const incomeOf = (b, x, y) => TYPE[b.t].inc * Math.pow(1.85, b.L - 1) * prox(x, y);
 const upCost = (b) => TYPE[b.t].cost * Math.pow(3.4, b.L);
 const countOf = (t) => Object.values(S.b).filter((b) => b.t === t).length;
-const buildCost = (t) => Math.round(TYPE[t].cost * Math.pow(1.15, countOf(t)));
-const unlocked = (i) => i === 0 || S.best >= TYPES[i].cost * .45;
-const originCost = () => 60 * Math.pow(4.2, S.origin - 1);
-const tapBase = () => Math.pow(3, S.origin - 1);
+const buildCost = (t) => TYPE[t].cost * Math.pow(1.15, countOf(t));
+const unlocked = (i) => i === 0 || S.life >= TYPES[i].cost * 1.5;                       // opens with everything you have ever earned
+const originCost = () => .001 * Math.pow(6, S.origin - 1);
+const tapBase = () => TAP * Math.pow(1.5, S.origin - 1);
 const owned = (x, y) => Math.max(Math.abs(x), Math.abs(y)) <= S.R && !(x === 0 && y === 0);
 
 const GOALS = [
-  { t: 'Build a Point',                 p: () => [countOf('point'), 1], r: 20 },
-  { t: 'Tap the origin 25 times',       p: () => [S.taps, 25], r: 40 },
-  { t: 'Own 5 structures',              p: () => [nB(), 5], r: 120 },
-  { t: 'Upgrade a structure to level 2', p: () => [maxL(), 2], r: 160 },
-  { t: 'Expand the plane',              p: () => [S.R - RMIN, 1], r: 400 },
-  { t: 'Catch a golden point',          p: () => [S.golds, 1], r: 600 },
-  { t: 'Earn 25 Ø per second',          p: () => [income(), 25], r: 1500 },
-  { t: 'Raise an Orbit',                p: () => [countOf('orbit'), 1], r: 6000 },
-  { t: 'Bring a structure to level 5',  p: () => [maxL(), 5], r: 20000 },
-  { t: 'Earn 500 Ø per second',         p: () => [income(), 500], r: 60000 },
-  { t: 'Raise a Spiral',                p: () => [countOf('spiral'), 1], r: 120000 },
-  { t: 'Own 40 structures',             p: () => [nB(), 40], r: 500000 },
-  { t: 'Raise a Monolith',              p: () => [countOf('monolith'), 1], r: 2e6 },
-  { t: 'Claim the whole plane',         p: () => [S.R, RMAX], r: 2e7 },
-  { t: 'Earn 100K Ø per second',        p: () => [income(), 1e5], r: 1e8 },
+  { t: 'Tap the origin 50 times',        p: () => [S.taps, 50], r: .002 },
+  { t: 'Build a Point',                  p: () => [countOf('point'), 1], r: .005 },
+  { t: 'Own 5 structures',               p: () => [nB(), 5], r: .05 },
+  { t: 'Raise a Line',                   p: () => [countOf('line'), 1], r: .2 },
+  { t: 'Expand the plane',               p: () => [S.R - RMIN, 1], r: 1 },
+  { t: 'Catch a golden point',           p: () => [S.golds, 1], r: 1 },
+  { t: 'Raise a Terrace',                p: () => [countOf('terrace'), 1], r: 5 },
+  { t: 'Bring a structure to level 5',   p: () => [maxL(), 5], r: 20 },
+  { t: 'Raise an Orbit',                 p: () => [countOf('orbit'), 1], r: 100 },
+  { t: 'Earn 0.01 Ø per second',         p: () => [income(), .01], r: 200 },
+  { t: 'Raise a Spiral',                 p: () => [countOf('spiral'), 1], r: 2000 },
+  { t: 'Earn 0.1 Ø per second',          p: () => [income(), .1], r: 10000 },
+  { t: 'Raise a Monolith',               p: () => [countOf('monolith'), 1], r: 50000 },
+  { t: 'Own 100 structures',             p: () => [nB(), 100], r: 2e5 },
+  { t: 'Bring a structure to level 10',  p: () => [maxL(), 10], r: 1e6 },
+  { t: 'Earn 1 Ø per second',            p: () => [income(), 1], r: 3e6 },
+  { t: 'Earn 10 Ø per second',           p: () => [income(), 10], r: 3e7 },
+  { t: 'Claim the whole plane',          p: () => [S.R, RMAX], r: 1e8 },
 ];
 const nB = () => Object.keys(S.b).length, maxL = () => Object.values(S.b).reduce((m, b) => Math.max(m, b.L), 0);
 
 /* =====================================================================================================
    STATE (saved locally)
    ===================================================================================================== */
-const SAVE = 'nullo.arcade.v1';
-const fresh = () => ({ v: 1, coins: 30, life: 0, best: 30, R: RMIN, b: {}, origin: 1, taps: 0, golds: 0, goal: 0, t: Date.now(), sound: false, boost: 0, seen: false });
+const SAVE = 'nullo.arcade.v2';   // v1 was the short prototype economy
+const fresh = () => ({ v: 2, coins: 0, life: 0, best: 0, R: RMIN, b: {}, origin: 1, taps: 0, golds: 0, goal: 0, t: Date.now(), sound: false, boost: 0, seen: false });
 let S = fresh();
 let started = false;
-try { const s = JSON.parse(localStorage.getItem(SAVE)); if (s && s.v === 1) S = Object.assign(fresh(), s); } catch (e) {}
+try { const s = JSON.parse(localStorage.getItem(SAVE)); if (s && s.v === 2) S = Object.assign(fresh(), s); } catch (e) {}
 started = !!S.seen;
 const save = () => { S.t = Date.now(); try { localStorage.setItem(SAVE, JSON.stringify(S)); } catch (e) {} };
 const boostOn = () => S.boost > Date.now();
@@ -149,7 +158,7 @@ function pulse(x, y, color = IV, size = 1.2, life = 1.1, op = .7) {
 }
 
 /* =====================================================================================================
-   ARCHITECTURE — dark metal, ivory edges, gold at level 5
+   ARCHITECTURE — dark metal, ivory edges, gold at level 10
    ===================================================================================================== */
 const blkMat = new THREE.MeshStandardMaterial({ color: 0x121215, roughness: .5, metalness: .5, emissive: 0x050506 });
 const ringMat = new THREE.MeshStandardMaterial({ color: 0x18181c, roughness: .35, metalness: .7, emissive: 0x060607 });
@@ -159,25 +168,25 @@ const cylGeo = (r, h) => { const k = `c${r},${h}`; if (!geoCache.has(k)) { const
 const circle = (r, n = 96) => { const p = []; for (let i = 0; i <= n; i++) { const a = i / n * Math.PI * 2; p.push(new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r)); } return new THREE.BufferGeometry().setFromPoints(p); };
 
 function makeBuilding(t, L) {
-  const g = new THREE.Group(), gold = L >= MAXL || t === 'monolith';
+  const g = new THREE.Group(), gold = L >= MAXL || t === 'monolith', q = Math.ceil(L / 2);   // q: visual tier 1–5
   const edge = new THREE.LineBasicMaterial({ color: gold ? GOLD : IV, transparent: true, opacity: gold ? .9 : .5 });
   const lite = new THREE.MeshBasicMaterial({ color: gold ? GOLD : IV, transparent: true, opacity: 1 });
   g.userData = { edge, lite, spin: [], top: 0, gold };
   const part = (geo, y, ry = 0, x = 0, z = 0) => { const m = new THREE.Mesh(geo[0], blkMat); m.add(new THREE.LineSegments(geo[1], edge)); m.position.set(x, y, z); m.rotation.y = ry; g.add(m); return m; };
   const cap = (y, s = .085) => { const c = new THREE.Mesh(boxGeo(s, s, s)[0], lite); c.position.y = y + s / 2 + .01; g.add(c); const gl = glow(gold ? GOLD : IV, .55, .3); gl.position.y = c.position.y; g.add(gl); g.userData.capGlow = gl; };
   let top = 0;
-  if (t === 'point') { const h = .26 + .15 * L; part(boxGeo(.44, h, .44), h / 2); top = h; if (L >= 3) cap(top); }
-  else if (t === 'line') { const h = .8 + .3 * L; part(boxGeo(.12, h, .12), h / 2, 0, -.15); part(boxGeo(.12, h, .12), h / 2, 0, .15);
-    part(boxGeo(.46, .06, .16), h + .03); if (L >= 2) part(boxGeo(.3, .04, .1), h * .55); top = h + .06; if (L >= 3) cap(top); }
-  else if (t === 'terrace') { let y = 0; const n = 1 + L; for (let i = 0; i < n; i++) { const s = .72 - i * (.5 / n), h = .13; part(boxGeo(+s.toFixed(3), h, +s.toFixed(3)), y + h / 2); y += h; } top = y; if (L >= 2) cap(top); }
-  else if (t === 'orbit') { const h = .7 + .26 * L; part(cylGeo(.12, +h.toFixed(2)), h / 2); top = h;
-    const nr = Math.ceil(L / 2) + (L >= 5 ? 1 : 0);
+  if (t === 'point') { const h = +(.26 + .08 * L).toFixed(2); part(boxGeo(.44, h, .44), h / 2); top = h; if (L >= 5) cap(top); }
+  else if (t === 'line') { const h = +(.8 + .17 * L).toFixed(2); part(boxGeo(.12, h, .12), h / 2, 0, -.15); part(boxGeo(.12, h, .12), h / 2, 0, .15);
+    part(boxGeo(.46, .06, .16), h + .03); if (L >= 3) part(boxGeo(.3, .04, .1), h * .55); if (L >= 7) part(boxGeo(.3, .04, .1), h * .3); top = h + .06; if (L >= 5) cap(top); }
+  else if (t === 'terrace') { let y = 0; const n = 1 + q; for (let i = 0; i < n; i++) { const s = .72 - i * (.5 / n), h = .13; part(boxGeo(+s.toFixed(3), h, +s.toFixed(3)), y + h / 2); y += h; } top = y; if (L >= 4) cap(top); }
+  else if (t === 'orbit') { const h = .7 + .13 * L; part(cylGeo(.12, +h.toFixed(2)), h / 2); top = h;
+    const nr = Math.ceil(q / 2) + (L >= MAXL ? 1 : 0);
     for (let i = 0; i < nr; i++) { const ring = new THREE.Group(); ring.position.y = h * (.45 + .2 * i); ring.rotation.x = .35 + i * .5; ring.rotation.z = i * .9;
       ring.add(new THREE.LineLoop(circle(.3 + i * .05), edge)); const sat = new THREE.Mesh(boxGeo(.05, .05, .05)[0], lite); sat.position.x = .3 + i * .05; ring.add(sat);
       g.add(ring); g.userData.spin.push([ring, .6 + i * .35]); }
     cap(top, .07); }
-  else if (t === 'spiral') { const n = 3 + 2 * L; for (let i = 0; i < n; i++) part(boxGeo(.5, .06, .5), .05 + i * .115, i * (137.5 / 13) * Math.PI / 180); top = .08 + n * .115; cap(top); }
-  else if (t === 'monolith') { const h = 1.7 + .42 * L; part(boxGeo(.62, .05, .62), .025); part(boxGeo(.32, h, .32), h / 2 + .05); top = h + .05; cap(top, .1);
+  else if (t === 'spiral') { const n = 3 + L; for (let i = 0; i < n; i++) part(boxGeo(.5, .06, .5), .05 + i * .115, i * (137.5 / 13) * Math.PI / 180); top = .08 + n * .115; cap(top); }
+  else if (t === 'monolith') { const h = 1.7 + .21 * L; part(boxGeo(.62, .05, .62), .025); part(boxGeo(.32, h, .32), h / 2 + .05); top = h + .05; cap(top, .1);
     const beam = new THREE.Mesh(new THREE.CylinderGeometry(.008, .008, 3, 6, 1, true), new THREE.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: .5, blending: THREE.AdditiveBlending, depthWrite: false }));
     beam.position.y = top + 1.5; g.add(beam); }
   if (L >= MAXL && t !== 'monolith') { const beam = new THREE.Mesh(new THREE.CylinderGeometry(.006, .006, 1.4, 6, 1, true), new THREE.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: .45, blending: THREE.AdditiveBlending, depthWrite: false })); beam.position.y = top + .8; g.add(beam); }
@@ -204,9 +213,9 @@ const corePad = new THREE.Mesh(boxGeo(.7, .05, .7)[0], blkMat); corePad.position
 const coreGlow = glow(IV, 2.4, .8); coreGlow.position.y = .55; core.add(coreGlow);
 const frames = [];
 function rebuildCore() { frames.forEach((f) => core.remove(f)); frames.length = 0;
-  const n = Math.min(5, S.origin);
+  const n = Math.min(5, Math.ceil(S.origin / 2));
   for (let i = 0; i < n; i++) { const s = .42 + i * .12, f = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-s, 0, -s), new THREE.Vector3(s, 0, -s), new THREE.Vector3(s, 0, s), new THREE.Vector3(-s, 0, s)]),
-      new THREE.LineBasicMaterial({ color: i === n - 1 && S.origin >= 5 ? GOLD : IV, transparent: true, opacity: .75 - i * .1 }));
+      new THREE.LineBasicMaterial({ color: i === n - 1 && S.origin >= OMAX ? GOLD : IV, transparent: true, opacity: .75 - i * .1 }));
     f.position.y = .55; f.userData.sp = (i % 2 ? -1 : 1) * (.25 + i * .12); f.rotation.x = .4 + i * .3; core.add(f); frames.push(f); } }
 rebuildCore();
 const coreHit = new THREE.Mesh(new THREE.BoxGeometry(.9, 1.2, .9), new THREE.MeshBasicMaterial({ visible: false })); coreHit.position.y = .55; core.add(coreHit);
@@ -231,7 +240,7 @@ function catchGold() {
   if (!GP.on) return; GP.on = false; goldG.visible = gDash.visible = false; S.golds++;
   const inc = income();
   if (Math.random() < .4 && inc > 0) { S.boost = Math.max(Date.now(), S.boost) + 20000; toast('GOLDEN HOUR · ×3 INCOME · 20 S', true); }
-  else { const r = Math.max(60, inc * 45); earn(r); toast(`GOLDEN POINT ${coord(GP.x, GP.y)} · +${fmt(r)} Ø`, true); popAt(P(GP.x, GP.y, GP.h), '+' + fmt(r), true); }
+  else { const r = Math.max(.002, inc * 60); earn(r); toast(`GOLDEN POINT ${coord(GP.x, GP.y)} · +${fmt(r)} Ø`, true); popAt(P(GP.x, GP.y, GP.h), '+' + fmt(r), true); }
   pulse(GP.x, GP.y, GOLD, 2.6, 1.6, 1); burst(P(GP.x, GP.y, GP.h), 22, true); sfx('catch'); GP.next = 35 + Math.random() * 45;
 }
 
@@ -311,9 +320,9 @@ function openCard(x, y) {
   let h = `<button class="x" type="button" aria-label="Close">✕</button><div class="c">${coord(x, y)}</div>`;
   if (x === 0 && y === 0) {
     const oc = originCost();
-    h += `<div class="row"><span class="st live">ORIGIN</span><span class="lv">${lvl(Math.min(S.origin, 5), 5)}</span></div><h3>Nullorigo</h3><p>Everything starts here. Tap the origin to draw Ø from zero. Fast taps build a combo.</p>
-      <div class="kv"><span>Per tap</span><b>${fmt(tapBase() + income() * .04)} Ø</b></div>
-      <button class="go" type="button" data-a="origin" ${S.coins < oc ? 'disabled' : ''}>Strengthen origin · ${fmt(oc)} Ø</button>`;
+    h += `<div class="row"><span class="st live">ORIGIN</span><span class="lv">${lvl(S.origin, OMAX)}</span></div><h3>Nullorigo</h3><p>Everything starts here. Tap the origin to draw Ø from zero. Fast taps build a combo.</p>
+      <div class="kv"><span>Per tap</span><b>${fmt(tapBase())} Ø</b></div><div class="kv"><span>Fast taps</span><b>up to ×2</b></div>
+      ${S.origin < OMAX ? `<button class="go" type="button" data-a="origin" ${S.coins < oc ? 'disabled' : ''}>Strengthen origin · ${fmt(oc)} Ø<small>×1.5 per tap</small></button>` : '<div class="mx">Origin at full strength</div>'}`;
   } else if (b) {
     const T = TYPE[b.t], inc = incomeOf(b, x, y) * (boostOn() ? 3 : 1);
     h += `<div class="row"><span class="st${b.L >= MAXL ? ' gold' : ''}">${T.name.toUpperCase()}</span><span class="lv">${lvl(b.L, MAXL)}</span></div><h3>${T.name} · level ${b.L}</h3><p>${T.desc}</p>
@@ -338,8 +347,9 @@ function refreshCard() { if (sel && !ui.card.hidden) { const f = document.active
 function act(a, x, y, btn) {
   const k = key(x, y), b = S.b[k];
   if (a === 'up' && b && b.L < MAXL) { const c = upCost(b); if (S.coins < c) return sfx('no'); S.coins -= c; b.spent += c; b.L++; place(x, y, 'up'); pulse(x, y, b.L >= MAXL ? GOLD : IV, 1.4, 1, .8); burst(P(x, y, live.get(k).g.userData.top), 10, b.L >= MAXL); sfx('up'); if (b.L >= MAXL) toast(`${TYPE[b.t].name.toUpperCase()} ${coord(x, y)} · EDGED IN GOLD`, true); }
-  else if (a === 'sell' && b) { if (btn.dataset.sure !== '1') { btn.dataset.sure = '1'; btn.textContent = 'Tap again to sell'; return; } earn(b.spent * .4); delete S.b[k]; unplace(x, y); rebuildCorners(); pulse(x, y, IV, 1, .8, .5); sfx('no'); }
-  else if (a === 'origin') { const c = originCost(); if (S.coins < c) return sfx('no'); S.coins -= c; S.origin++; rebuildCore(); pulse(0, 0, GOLD, 2.4, 1.3, .9); burst(P(0, 0, .55), 18, true); sfx('up'); }
+  else if (a === 'sell' && b) { if (btn.dataset.sure !== '1') { btn.dataset.sure = '1'; btn.textContent = 'Tap again to sell'; return; } S.coins += b.spent * .4; delete S.b[k];   // a refund, not new earnings
+    unplace(x, y); rebuildCorners(); pulse(x, y, IV, 1, .8, .5); sfx('no'); }
+  else if (a === 'origin') { const c = originCost(); if (S.origin >= OMAX || S.coins < c) return sfx('no'); S.coins -= c; S.origin++; rebuildCore(); pulse(0, 0, GOLD, 2.4, 1.3, .9); burst(P(0, 0, .55), 18, true); sfx('up'); }
   else if (a === 'expand') return expand();
   save(); renderDock(); refreshCard();
 }
@@ -359,9 +369,9 @@ function expand() {
 let combo = 0, comboT = 0;
 function tapOrigin(sx, sy) {
   combo = performance.now() - comboT < 650 ? Math.min(combo + 1, 30) : 0; comboT = performance.now(); S.combo = combo;
-  const g = (tapBase() + income() * .04) * (1 + combo * .07); earn(g); S.taps++;
+  const g = tapBase() * (1 + combo * .035); earn(g); S.taps++;
   coreCube.scale.setScalar(1.35); pulse(0, 0, combo > 12 ? GOLD : IV, .9 + combo * .03, .6, .7); burst(P(0, 0, .6), 3 + Math.min(6, combo >> 2), combo > 12);
-  popScreen(sx, sy, '+' + fmt(g) + (combo > 2 ? `<em>×${(1 + combo * .07).toFixed(2)}</em>` : ''), combo > 12); sfx('tap');
+  popScreen(sx, sy, '+' + fmt(g) + (combo > 2 ? `<em>×${(1 + combo * .035).toFixed(2)}</em>` : ''), combo > 12); sfx('tap');
   if (sel && sel.x === 0 && sel.y === 0) refreshCardSoon();
 }
 let cardT = 0; function refreshCardSoon() { clearTimeout(cardT); cardT = setTimeout(refreshCard, 120); }
@@ -394,7 +404,7 @@ function popAt(v, html, gold) { const [x, y] = toScreen(v); popScreen(x, y, html
 function renderGoal() {
   if (S.goal >= GOALS.length) { ui.goal.innerHTML = `<div class="gt">ALL GOALS</div><div class="gx">Everything starts at (0,0).</div>`; return; }
   const G = GOALS[S.goal], [c, n] = G.p(), f = cl(c / n);
-  ui.goal.innerHTML = `<div class="gt">GOAL ${String(S.goal + 1).padStart(2, '0')} / ${GOALS.length}</div><div class="gx">${G.t}</div><div class="gb"><i style="transform:scaleX(${f})"></i></div><div class="gr"><span>${n > 50 ? fmt(Math.min(c, n)) + ' / ' + fmt(n) : Math.min(Math.floor(c), n) + ' / ' + n}</span><span>REWARD ${fmt(G.r)} Ø</span></div>`;
+  ui.goal.innerHTML = `<div class="gt">GOAL ${String(S.goal + 1).padStart(2, '0')} / ${GOALS.length}</div><div class="gx">${G.t}</div><div class="gb"><i style="transform:scaleX(${f})"></i></div><div class="gr"><span>${Number.isInteger(n) && n <= 1000 ? Math.min(Math.floor(c), n) + ' / ' + n : fmt(Math.min(c, n)) + ' / ' + fmt(n)}</span><span>REWARD ${fmt(G.r)} Ø</span></div>`;
   if (c >= n) { earn(G.r); toast(`GOAL COMPLETE · ${G.t.toUpperCase()} · +${fmt(G.r)} Ø`, true); sfx('goal'); S.goal++; save(); setTimeout(renderGoal, 50); }
 }
 
@@ -455,8 +465,8 @@ $('reset').onclick = (e) => { const b = e.currentTarget; if (b.dataset.sure !== 
 function start() { if (started) return; started = true; S.seen = true; audio(); save(); const i = $('intro'); if (i) { i.classList.add('out'); setTimeout(() => i.remove(), 900); } }
 if (S.seen) $('intro')?.remove(); else { document.addEventListener('arcade:start', start); if (window.__arcadeStart) start(); }
 { // earnings while away: half rate, up to two hours
-  const away = Math.min(7200, (Date.now() - S.t) / 1000), inc = income() / (boostOn() ? 3 : 1), g = inc * away * .5;
-  if (S.seen && away > 30 && g >= 1) { $('wbv').textContent = '+' + fmt(g) + ' Ø'; $('wbt').textContent = `${Math.floor(away / 60)} min on the plane while you were away`; $('welcome').hidden = false;
+  const away = Math.min(86400, (Date.now() - S.t) / 1000), inc = income() / (boostOn() ? 3 : 1), g = inc * away * .5;
+  if (S.seen && away > 30 && g >= .0001) { $('wbv').textContent = '+' + fmt(g) + ' Ø'; $('wbt').textContent = (away >= 5400 ? `${(away / 3600).toFixed(1)} h` : `${Math.floor(away / 60)} min`) + ' on the plane while you were away · half rate, up to a day'; $('welcome').hidden = false;
     $('wbc').onclick = () => { earn(g); $('welcome').hidden = true; burst(P(0, 0, .6), 30, true); sfx('catch'); save(); }; }
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden) save(); else last = performance.now(); });

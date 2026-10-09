@@ -29,6 +29,7 @@ button:focus-visible{outline:1px solid var(--fg);outline-offset:3px}
 .hud>*{pointer-events:auto}
 .brand{font-size:12px;letter-spacing:.32em;color:var(--fg);text-decoration:none;opacity:.8;line-height:1.9}
 .brand small{display:block;font-size:10px;letter-spacing:.3em;color:var(--gold);opacity:.95}
+.demo{display:inline-block;margin-left:8px;padding:2px 6px 1px 8px;border:1px solid rgba(222,184,108,.6);color:var(--gold);letter-spacing:.3em;font-size:9px;vertical-align:1px}
 .wallet{text-align:right}
 .coins{font-size:clamp(26px,3.2vw,38px);letter-spacing:.03em;font-variant-numeric:tabular-nums;color:var(--gold);line-height:1;display:flex;align-items:baseline;gap:10px;justify-content:flex-end}
 .coins i{font-style:normal;font-size:.55em;opacity:.8}
@@ -58,7 +59,7 @@ button:focus-visible{outline:1px solid var(--fg);outline-offset:3px}
 .card .c{font-size:30px;letter-spacing:.04em;font-variant-numeric:tabular-nums;color:var(--gold);margin-bottom:12px}
 .card .row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:14px}
 .st{font-size:10px;letter-spacing:.2em;padding:3px 7px;border:1px solid var(--ln);color:var(--mu)}.st.live{color:var(--fg);border-color:var(--fg)}.st.gold{color:var(--gold);border-color:rgba(222,184,108,.6)}
-.lvb{display:flex;gap:4px}.lvb b{width:9px;height:9px;border:1px solid rgba(240,236,226,.35)}.lvb b.f{background:var(--fg);border-color:var(--fg)}.lvb b.g{background:var(--gold);border-color:var(--gold)}
+.lvb{display:flex;gap:3px}.lvb b{width:8px;height:8px;border:1px solid rgba(240,236,226,.35)}.lvb b.f{background:var(--fg);border-color:var(--fg)}.lvb b.g{background:var(--gold);border-color:var(--gold)}
 .card h3{font-weight:400;font-size:21px;letter-spacing:.03em;margin:0 0 8px}
 .card p{margin:0 0 16px;font-size:13.5px;line-height:1.6;color:var(--mu)}
 .kv{display:flex;justify-content:space-between;font-size:12px;letter-spacing:.12em;color:var(--mu);padding:9px 0;border-top:1px solid var(--ln);text-transform:uppercase}
@@ -106,6 +107,7 @@ button:focus-visible{outline:1px solid var(--fg);outline-offset:3px}
 .menu h4{font-weight:400;font-size:11px;letter-spacing:.3em;color:var(--gold);margin:0 0 14px}
 .menu ul{list-style:none;margin:0 0 18px;padding:0}
 .menu li{display:flex;justify-content:space-between;gap:14px;font-size:12.5px;padding:8px 0;border-top:1px solid var(--ln);color:var(--mu)}.menu li b{font-weight:400;color:var(--fg)}
+.menu .dnote{margin:0 0 16px;font-size:12px;line-height:1.6;color:var(--gold);letter-spacing:.04em}
 .menu .row2{display:flex;gap:8px}.menu .row2>*{flex:1}
 .menu a{display:block;text-align:center;font-size:11px;letter-spacing:.22em;color:var(--fg);text-decoration:none;border:1px solid var(--ln);padding:10px}
 .menu a:hover{border-color:var(--fg)}
@@ -153,7 +155,7 @@ button:focus-visible{outline:1px solid var(--fg);outline-offset:3px}
 <div class="grain" aria-hidden="true"></div><div class="vig" aria-hidden="true"></div>
 
 <header class="hud">
-  <a class="brand" href="/" aria-label="Back to Nullorigo">N U L L Ø R I G Ø<small>ARCADE · (−7, −7)</small></a>
+  <a class="brand" href="/" aria-label="Back to Nullorigo">N U L L Ø R I G Ø<small>ARCADE · (−7, −7) <span class="demo">DEMO</span></small></a>
   <div class="wallet">
     <div class="coins" aria-live="off"><span id="coins">0</span><i>Ø</i></div>
     <div class="rate" id="rate">+0 Ø/s</div>
@@ -179,12 +181,14 @@ button:focus-visible{outline:1px solid var(--fg);outline-offset:3px}
   <ul>
     <li><b>Tap (0, 0)</b><span>draw Ø · fast taps combo</span></li>
     <li><b>Pick · tap a point</b><span>build a structure</span></li>
-    <li><b>Tap a structure</b><span>upgrade to level 5</span></li>
+    <li><b>Tap a structure</b><span>upgrade to level 10</span></li>
     <li><b>Closer to zero</b><span>earns more</span></li>
     <li><b>Golden point</b><span>catch it before it fades</span></li>
-    <li><b>Expand</b><span>up to 15 × 15</span></li>
+    <li><b>Expand</b><span>up to 15 × 15 · years</span></li>
+    <li><b>Away</b><span>half income, up to a day</span></li>
     <li><b>Keys</b><span>1–6 · U · Space · Esc</span></li>
   </ul>
+  <p class="dnote">Demo version. Progress is saved in this browser only and may be reset before the full release.</p>
   <div class="row2"><a href="/">← NULLORIGO</a><button class="sell" type="button" id="reset" style="margin:0">Reset progress</button></div>
 </div>
 
@@ -194,9 +198,9 @@ button:focus-visible{outline:1px solid var(--fg);outline-offset:3px}
 </div>
 
 <div class="intro" id="intro">
-  <div class="k">(−7, −7)</div>
+  <div class="k">(−7, −7) · DEMO</div>
   <h1>ARCADE</h1>
-  <p>Build on the plane. Earn Ø, raise, upgrade, expand.<br>Everything starts at (0,0).</p>
+  <p>Build on the plane, one Ø at a time. A tap is worth 0.0001.<br>The whole plane takes years. Everything starts at (0,0).</p>
   <button type="button" id="start">ENTER THE PLANE</button>
   <p class="imsg" id="imsg" hidden></p>
 </div>
