@@ -1,0 +1,36 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Origins 3D · render</title>
+<link rel="stylesheet" href="fonts/jost.css">
+<style>html,body{margin:0;background:#09090A}</style>
+<script type="importmap">{ "imports": { "three": "./node_modules/three/build/three.module.js", "three/addons/": "./node_modules/three/examples/jsm/" } }</script>
+<script src="origins.js"></script>
+</head><body>
+<script type="module">
+/* Headless render surface used by render.mjs. window.R.* return PNG data URLs. */
+import { Origins3D, drawFrame } from './origins3d.js';
+await Promise.all([document.fonts.load('300 17px Jost'), document.fonts.load('400 17px Jost')]);
+let eng = null;
+function engine(size, ss) {
+  if (!eng) { const c = document.createElement('canvas'); document.body.appendChild(c); eng = new Origins3D(c, { size, ss, preserveDrawingBuffer: true }); }
+  else if (eng.size !== size || eng.ss !== ss) eng.setSize(size, ss);
+  return eng;
+}
+function finish(src, size, no, frame, label) {
+  const out = document.createElement('canvas'); out.width = out.height = size; const ctx = out.getContext('2d');
+  ctx.drawImage(src, 0, 0, size, size);
+  if (frame) drawFrame(ctx, no, size, label);
+  const px = ctx.getImageData(0, 0, size, size).data; let sum = 0; for (let i = 0; i < px.length; i += 16) sum += px[i] + px[i + 1] + px[i + 2];
+  return { url: out.toDataURL('image/png'), mean: sum / (px.length / 16) / 3 };
+}
+window.R = {
+  render3D(no, { size = 2048, ss = 2, frame = true, azimuth = null, top = false } = {}) {
+    const e = engine(size, ss); e.setToken(no); e.view.top = top; if (azimuth !== null) e.view.azimuth = azimuth; else e.view.azimuth = 38;
+    e.render(); return finish(e.canvas, size, no, frame, top ? null : e.goldScreen());
+  },
+  render2D(no, { size = 2048 } = {}) {
+    const c = document.createElement('canvas'); c.width = c.height = size; ORIGINS.draw(c.getContext('2d'), no, size, { grain: true }); return { url: c.toDataURL('image/png') };
+  },
+  metadata: (no) => ORIGINS.metadata(no),
+  ready: true,
+};
+</script></body></html>

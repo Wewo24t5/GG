@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Origins 3D Viewer</title>
+<link rel="stylesheet" href="fonts/jost.css">
+<style>
+  :root { --bg:#09090A; --ink:#F0ECE2; --mute:#8f8d87; --line:#2a2a2a; --gold:#DEB86C; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--ink); font:300 14px Jost, sans-serif; }
+  body { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; padding:16px; box-sizing:border-box; }
+  #stage { position:relative; width:min(92vw, calc(100vh - 110px)); aspect-ratio:1; }
+  #stage canvas { position:absolute; inset:0; width:100%; height:100%; }
+  #overlay { pointer-events:none; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:center; letter-spacing:.06em; }
+  button, input { font:inherit; color:var(--ink); background:transparent; border:1px solid var(--line); padding:6px 12px; border-radius:2px; }
+  button:hover { border-color:var(--mute); } button.on { border-color:var(--gold); color:var(--gold); }
+  input { width:5.5em; text-align:center; }
+  #info { color:var(--mute); min-width:16em; text-align:center; }
+</style>
+<script type="importmap">{ "imports": { "three": "./node_modules/three/build/three.module.js", "three/addons/": "./node_modules/three/examples/jsm/" } }</script>
+<script src="origins.js"></script>
+</head><body>
+<div id="stage"><canvas id="gl"></canvas><canvas id="overlay"></canvas></div>
+<div class="bar">
+  <button id="prev" aria-label="Previous token">←</button>
+  <input id="no" type="number" min="1" max="3333" value="1" aria-label="Token number">
+  <button id="next" aria-label="Next token">→</button>
+  <button id="rand">random</button>
+  <button id="orbit" class="on">orbit</button>
+  <button id="frame" class="on">frame</button>
+  <button id="top">top view</button>
+  <span id="info"></span>
+</div>
+<script type="module">
+import { Origins3D, drawFrame } from './origins3d.js';
+await Promise.all([document.fonts.load('300 17px Jost'), document.fonts.load('400 17px Jost')]);
+const $ = (id) => document.getElementById(id);
+const stage = $('stage'), ov = $('overlay'), octx = ov.getContext('2d');
+const px = () => Math.min(2048, Math.round(stage.clientWidth * Math.min(2, devicePixelRatio || 1)));
+const eng = new Origins3D($('gl'), { size: px(), ss: 1.5 });
+let no = +(new URLSearchParams(location.search).get('n') || 1), orbit = true, frame = true, t0 = performance.now();
+function load(n) {
+  no = Math.min(3333, Math.max(1, n | 0)); $('no').value = no; history.replaceState(null, '', '?n=' + no);
+  eng.setToken(no); const p = eng.p; $('info').textContent = `${p.family} · ${p.figure} · ${p.ink}${p.special !== 'None' ? ' · ' + p.special : ''}`;
+}
+function overlay() {
+  const S = eng.size; if (ov.width !== S) ov.width = ov.height = S;
+  octx.clearRect(0, 0, S, S); if (frame) drawFrame(octx, no, S, eng.view.top ? null : eng.goldScreen());
+}
+function tick(now) {
+  eng.view.azimuth = orbit && !eng.view.top ? 38 + 20 * Math.sin((now - t0) / 1000 / 6 * 2 * Math.PI) : 38;   // same ±20° / 6 s loop as the video
+  eng.render(); overlay(); requestAnimationFrame(tick);
+}
+$('prev').onclick = () => load(no - 1); $('next').onclick = () => load(no + 1);
+$('rand').onclick = () => load(1 + Math.floor(Math.random() * 3333));
+$('no').onchange = (e) => load(+e.target.value);
+const toggle = (id, fn) => $(id).onclick = () => $(id).classList.toggle('on', fn());
+toggle('orbit', () => (orbit = !orbit, t0 = performance.now(), orbit));
+toggle('frame', () => (frame = !frame));
+toggle('top', () => (eng.view.top = !eng.view.top));
+addEventListener('keydown', (e) => { if (e.target.tagName === 'INPUT') return; if (e.key === 'ArrowLeft') load(no - 1); if (e.key === 'ArrowRight') load(no + 1); });
+addEventListener('resize', () => { const s = px(); if (s !== eng.size) eng.setSize(s, eng.ss); });
+load(no); requestAnimationFrame(tick);
+</script></body></html>

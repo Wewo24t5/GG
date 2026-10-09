@@ -1,0 +1,16 @@
+{
+  "name": "origins-3d",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "serve": "node render.mjs --serve",
+    "render": "node render.mjs",
+    "contact": "node render.mjs --contact"
+  },
+  "dependencies": {
+    "three": "0.160.0"
+  },
+  "devDependencies": {
+    "playwright": "1.56.1"
+  }
+}
