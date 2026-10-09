@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Nullorigo — Arcade (−7, −7)</title>
+<meta name="description" content="Build on the plane. Earn Ø, upgrade, expand. Everything starts at (0,0).">
+<meta name="theme-color" content="#050506">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23050506'/%3E%3Crect x='13' y='13' width='6' height='6' fill='%23DEB86C'/%3E%3C/svg%3E">
+<!--FONTS--><link rel="stylesheet" href="../fonts/jost.css"><!--/FONTS-->
+<style>
+:root{--bg:#050506;--fg:#F0ECE2;--mu:rgba(240,236,226,.58);--gold:#DEB86C;--ln:rgba(240,236,226,.14);--glass:rgba(5,5,6,.7)}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--fg);font-family:"Jost","Futura","Century Gothic","Avenir Next",sans-serif;font-weight:300;-webkit-font-smoothing:antialiased;touch-action:none;overscroll-behavior:none;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+::selection{background:var(--gold);color:#000}
+button{font:inherit;color:inherit;touch-action:manipulation}
+button:focus-visible{outline:1px solid var(--fg);outline-offset:3px}
+#gl{position:fixed;inset:0;width:100%;height:100%;display:block;cursor:grab;opacity:0;transition:opacity 1.4s ease}
+.ready #gl{opacity:1}
+#gl:active{cursor:grabbing}
+.grain{position:fixed;inset:-50%;width:200%;height:200%;pointer-events:none;opacity:.05;mix-blend-mode:overlay;z-index:1;
+ background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");animation:gr 1s steps(4) infinite}
+@keyframes gr{0%{transform:translate(0,0)}25%{transform:translate(-3%,2%)}50%{transform:translate(2%,-3%)}75%{transform:translate(-2%,-1%)}}
+.vig{position:fixed;inset:0;pointer-events:none;z-index:1;background:radial-gradient(ellipse at 50% 50%,transparent 50%,rgba(0,0,0,.62) 100%)}
+.panel{background:var(--glass);border:1px solid var(--ln);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+
+/* HUD */
+.hud{position:fixed;left:0;right:0;top:0;z-index:5;display:flex;justify-content:space-between;align-items:flex-start;padding:calc(20px + env(safe-area-inset-top,0px)) clamp(16px,3.4vw,44px) 0;pointer-events:none}
+.hud>*{pointer-events:auto}
+.brand{font-size:12px;letter-spacing:.32em;color:var(--fg);text-decoration:none;opacity:.8;line-height:1.9}
+.brand small{display:block;font-size:10px;letter-spacing:.3em;color:var(--gold);opacity:.95}
+.wallet{text-align:right}
+.coins{font-size:clamp(26px,3.2vw,38px);letter-spacing:.03em;font-variant-numeric:tabular-nums;color:var(--gold);line-height:1;display:flex;align-items:baseline;gap:10px;justify-content:flex-end}
+.coins i{font-style:normal;font-size:.55em;opacity:.8}
+.rate{font-size:11px;letter-spacing:.24em;color:var(--mu);margin-top:8px;font-variant-numeric:tabular-nums}
+.boost{display:inline-block;margin-top:8px;font-size:10px;letter-spacing:.24em;color:var(--bg);background:var(--gold);padding:4px 8px;animation:pulse 1.6s ease-in-out infinite}
+.boost[hidden]{display:none}
+.tools{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+.tb{font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:var(--mu);background:rgba(5,5,6,.5);border:1px solid var(--ln);padding:8px 11px;cursor:pointer;display:flex;align-items:center;gap:8px}
+.tb:hover{color:var(--fg);border-color:rgba(240,236,226,.4)}
+.tb i{display:inline-flex;gap:2px;align-items:flex-end;height:10px}.tb i b{width:2px;background:currentColor;height:3px}
+.tb[aria-pressed="true"]{color:var(--fg);border-color:var(--fg)}.tb[aria-pressed="true"] i b{animation:eq 1s ease-in-out infinite}.tb i b:nth-child(2){animation-delay:.2s}.tb i b:nth-child(3){animation-delay:.4s}
+@keyframes eq{0%,100%{height:3px}50%{height:10px}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+
+/* goal */
+.goal{position:fixed;left:clamp(16px,3.4vw,44px);top:calc(104px + env(safe-area-inset-top,0px));z-index:4;width:260px;padding:14px 16px 12px}
+.gt{font-size:10px;letter-spacing:.3em;color:var(--gold);display:flex;align-items:center;gap:10px}
+.gt::after{content:"";flex:0 0 34px;height:1px;background:var(--gold);opacity:.6}
+.gx{font-size:15px;letter-spacing:.03em;margin:9px 0 11px;line-height:1.35}
+.gb{height:1px;background:var(--ln);position:relative;overflow:hidden}.gb i{position:absolute;inset:0;background:var(--fg);transform-origin:left;transition:transform .5s cubic-bezier(.2,.7,.2,1)}
+.gr{display:flex;justify-content:space-between;gap:10px;font-size:10px;letter-spacing:.18em;color:var(--mu);margin-top:9px;font-variant-numeric:tabular-nums}
+
+/* card */
+.card{position:fixed;right:clamp(16px,3.4vw,44px);top:calc(150px + env(safe-area-inset-top,0px));z-index:6;width:330px;padding:22px 22px 18px;border-color:rgba(240,236,226,.25);animation:fade .35s ease both}
+.card[hidden]{display:none}
+.card .x{position:absolute;right:8px;top:6px;font-size:15px;color:var(--mu);background:none;border:0;cursor:pointer;padding:8px}
+.card .c{font-size:30px;letter-spacing:.04em;font-variant-numeric:tabular-nums;color:var(--gold);margin-bottom:12px}
+.card .row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:14px}
+.st{font-size:10px;letter-spacing:.2em;padding:3px 7px;border:1px solid var(--ln);color:var(--mu)}.st.live{color:var(--fg);border-color:var(--fg)}.st.gold{color:var(--gold);border-color:rgba(222,184,108,.6)}
+.lvb{display:flex;gap:4px}.lvb b{width:9px;height:9px;border:1px solid rgba(240,236,226,.35)}.lvb b.f{background:var(--fg);border-color:var(--fg)}.lvb b.g{background:var(--gold);border-color:var(--gold)}
+.card h3{font-weight:400;font-size:21px;letter-spacing:.03em;margin:0 0 8px}
+.card p{margin:0 0 16px;font-size:13.5px;line-height:1.6;color:var(--mu)}
+.kv{display:flex;justify-content:space-between;font-size:12px;letter-spacing:.12em;color:var(--mu);padding:9px 0;border-top:1px solid var(--ln);text-transform:uppercase}
+.kv b{font-weight:400;color:var(--fg);letter-spacing:.04em;text-transform:none;font-variant-numeric:tabular-nums}
+.go{display:block;width:100%;margin-top:14px;font-size:12px;letter-spacing:.16em;color:var(--bg);background:var(--gold);border:1px solid var(--gold);padding:12px;cursor:pointer;text-transform:uppercase}
+.go small{display:block;font-size:10px;letter-spacing:.14em;margin-top:4px;opacity:.75;text-transform:none}
+.go:hover:not(:disabled){background:#ecc983}
+.go:disabled{background:none;color:var(--mu);border-color:var(--ln);cursor:default}
+.sell{display:block;width:100%;margin-top:8px;font-size:11px;letter-spacing:.2em;color:var(--mu);background:none;border:1px solid var(--ln);padding:10px;cursor:pointer;text-transform:uppercase}
+.sell:hover{color:var(--fg);border-color:rgba(240,236,226,.4)}
+.mx{margin-top:14px;font-size:11px;letter-spacing:.22em;color:var(--gold);text-transform:uppercase;text-align:center;border:1px solid rgba(222,184,108,.45);padding:11px}
+
+/* dock */
+.dockw{position:fixed;left:0;right:0;bottom:calc(22px + env(safe-area-inset-bottom,0px));z-index:5;display:flex;justify-content:center;pointer-events:none;padding:0 12px}
+.dock{display:flex;gap:6px;padding:6px;pointer-events:auto;overflow-x:auto;scrollbar-width:none;max-width:100%}
+.dock::-webkit-scrollbar{display:none}
+.bt{position:relative;flex:0 0 auto;width:104px;display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 6px 10px;background:none;border:1px solid transparent;cursor:pointer;transition:border-color .25s,background .25s}
+.bt:hover{border-color:var(--ln);background:rgba(240,236,226,.03)}
+.bt.on{border-color:var(--fg);background:rgba(240,236,226,.06)}
+.bt .nm{font-size:11px;letter-spacing:.22em;text-transform:uppercase;white-space:nowrap}
+.bt .cs{font-size:12px;letter-spacing:.06em;color:var(--gold);font-variant-numeric:tabular-nums}
+.bt.poor .cs{color:var(--mu)}.bt.poor svg{opacity:.45}
+.bt.locked{cursor:not-allowed}.bt.locked svg,.bt.locked .nm{opacity:.28}.bt.locked .cs{color:var(--mu);letter-spacing:.3em}
+.bt .kb{position:absolute;left:7px;top:5px;font-size:9px;color:var(--mu);letter-spacing:.1em}
+.bt.ex{border-left:1px solid var(--ln);margin-left:4px;width:128px}.bt.ex .nm{color:var(--gold);letter-spacing:.16em}
+.placing .bt:not(.on){opacity:.6}
+
+/* labels, pops, toasts */
+.lab{position:fixed;left:0;top:0;z-index:3;pointer-events:none;font-size:13px;letter-spacing:.12em;color:var(--fg);font-variant-numeric:tabular-nums;text-shadow:0 0 12px rgba(0,0,0,.9)}
+.lab[hidden]{display:none}
+.pops{position:fixed;inset:0;pointer-events:none;z-index:4}
+.pop{position:absolute;transform:translate(-50%,-50%);font-size:18px;letter-spacing:.04em;color:var(--fg);font-variant-numeric:tabular-nums;animation:rise 1.1s cubic-bezier(.2,.7,.2,1) both;text-shadow:0 0 14px rgba(0,0,0,.8);white-space:nowrap}
+.pop em{font-style:normal;font-size:11px;letter-spacing:.14em;color:var(--gold);margin-left:6px}
+.pop.g{color:var(--gold);font-size:22px}
+@keyframes rise{0%{opacity:0;transform:translate(-50%,-30%)}15%{opacity:1}100%{opacity:0;transform:translate(-50%,-260%)}}
+.toasts{position:fixed;left:50%;top:calc(24px + env(safe-area-inset-top,0px));transform:translateX(-50%);z-index:7;display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none;width:min(560px,calc(100vw - 32px))}
+.toast{font-size:11px;letter-spacing:.24em;color:var(--fg);background:rgba(5,5,6,.78);border:1px solid var(--ln);padding:10px 16px;text-align:center;animation:fade .35s ease both;transition:opacity .6s ease,transform .6s ease;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.toast.g{color:var(--gold);border-color:rgba(222,184,108,.5)}
+.toast.out{opacity:0;transform:translateY(-8px)}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+
+/* menu, intro, welcome */
+.menu{position:fixed;right:clamp(16px,3.4vw,44px);top:calc(150px + env(safe-area-inset-top,0px));z-index:8;width:330px;padding:22px}
+.menu[hidden]{display:none}
+.menu h4{font-weight:400;font-size:11px;letter-spacing:.3em;color:var(--gold);margin:0 0 14px}
+.menu ul{list-style:none;margin:0 0 18px;padding:0}
+.menu li{display:flex;justify-content:space-between;gap:14px;font-size:12.5px;padding:8px 0;border-top:1px solid var(--ln);color:var(--mu)}.menu li b{font-weight:400;color:var(--fg)}
+.menu .row2{display:flex;gap:8px}.menu .row2>*{flex:1}
+.menu a{display:block;text-align:center;font-size:11px;letter-spacing:.22em;color:var(--fg);text-decoration:none;border:1px solid var(--ln);padding:10px}
+.menu a:hover{border-color:var(--fg)}
+.menu .x{position:absolute;right:8px;top:6px;font-size:15px;color:var(--mu);background:none;border:0;cursor:pointer;padding:8px}
+.intro{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;background:radial-gradient(circle at 50% 55%,rgba(5,5,6,.35),rgba(5,5,6,.92) 70%);transition:opacity .9s ease;padding:24px}
+.intro.out{opacity:0;pointer-events:none}
+.intro .k{font-size:12px;letter-spacing:.34em;color:var(--gold);display:flex;align-items:center;gap:14px;animation:fade 1s ease .2s both}
+.intro .k::before,.intro .k::after{content:"";width:40px;height:1px;background:var(--gold);opacity:.6}
+.intro h1{font-weight:300;font-size:clamp(46px,8vw,104px);letter-spacing:.32em;margin:22px 0 10px;padding-left:.32em;animation:up 1.2s cubic-bezier(.2,.7,.2,1) .35s both}
+.intro p{font-size:clamp(14px,1.4vw,17px);letter-spacing:.14em;color:var(--mu);margin:0 0 40px;animation:fade 1.2s ease .9s both;line-height:1.7}
+.intro button{font-size:13px;letter-spacing:.32em;color:var(--fg);background:none;border:1px solid var(--fg);padding:16px 30px;cursor:pointer;animation:fade 1s ease 1.3s both}
+.intro button:hover{background:var(--fg);color:var(--bg)}
+@keyframes up{from{opacity:0;transform:translateY(40px)}to{opacity:1;transform:none}}
+.welcome{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:15;width:min(380px,calc(100vw - 32px));padding:30px 26px 24px;text-align:center;border-color:rgba(222,184,108,.5);animation:fade .5s ease both}
+.welcome[hidden]{display:none}
+.welcome .k{font-size:10px;letter-spacing:.32em;color:var(--mu)}
+.welcome .v{font-size:40px;color:var(--gold);margin:14px 0 6px;font-variant-numeric:tabular-nums}
+.welcome .t{font-size:12px;letter-spacing:.1em;color:var(--mu);margin-bottom:22px}
+.hint{position:fixed;left:clamp(16px,3.4vw,44px);bottom:calc(30px + env(safe-area-inset-bottom,0px));z-index:3;font-size:10px;letter-spacing:.26em;color:var(--mu);line-height:2;pointer-events:none}
+
+@media (max-width:760px){
+ .hud{padding-top:calc(14px + env(safe-area-inset-top,0px))}
+ .brand{font-size:10px;letter-spacing:.24em}
+ .coins{font-size:26px}
+ .tools .tb span{display:none}
+ .goal{top:auto;bottom:calc(132px + env(safe-area-inset-bottom,0px));left:12px;width:auto;max-width:calc(100vw - 24px);padding:10px 12px;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px}
+ .goal .gx{margin:0;font-size:13px}.goal .gb{flex-basis:100%}.goal .gr{flex-basis:100%;margin-top:4px}
+ .card,.menu{left:12px;right:12px;width:auto;top:auto;bottom:calc(126px + env(safe-area-inset-bottom,0px));max-height:calc(100vh - 260px);overflow:auto;padding:18px 18px 14px}
+ .card .c{font-size:24px;margin-bottom:6px}.card p{display:none}.card h3{font-size:17px;margin-bottom:4px}.card .row{margin-bottom:8px}.kv{padding:6px 0;font-size:11px}.go{padding:10px;margin-top:10px}.sell{padding:8px}
+ .card{max-height:46vh}
+ .card:not([hidden])~.goal{display:none}
+ .dockw{bottom:calc(10px + env(safe-area-inset-bottom,0px));padding:0}
+ .dock{border-left:0;border-right:0;width:100%;justify-content:flex-start}
+ .bt{width:86px;padding:10px 4px 8px}.bt .nm{font-size:10px;letter-spacing:.16em}.bt .kb{display:none}.bt.ex{width:112px}
+ .hint{display:none}
+}
+@media (prefers-reduced-motion:reduce){.grain{animation:none}.intro *{animation:none!important}}
+</style>
+<!--APP--><script type="importmap">{ "imports": { "three": "../node_modules/three/build/three.module.js", "three/addons/": "../node_modules/three/examples/jsm/" } }</script>
+<script type="module" src="game.js"></script><!--/APP-->
+</head>
+<body>
+<canvas id="gl" aria-label="The plane. Drag to turn, scroll to zoom, tap a point to build or open it."></canvas>
+<div class="grain" aria-hidden="true"></div><div class="vig" aria-hidden="true"></div>
+
+<header class="hud">
+  <a class="brand" href="/" aria-label="Back to Nullorigo">N U L L Ø R I G Ø<small>ARCADE · (−7, −7)</small></a>
+  <div class="wallet">
+    <div class="coins" aria-live="off"><span id="coins">0</span><i>Ø</i></div>
+    <div class="rate" id="rate">+0 Ø/s</div>
+    <span class="boost" id="boost" hidden></span>
+    <div class="tools">
+      <button class="tb" id="sound" type="button" aria-pressed="false"><i aria-hidden="true"><b></b><b></b><b></b></i><span>Sound off</span></button>
+      <button class="tb" id="menub" type="button" aria-label="Menu">≡ <span>Menu</span></button>
+    </div>
+  </div>
+</header>
+
+<section class="goal panel" id="goal" aria-live="polite"></section>
+<aside class="card panel" id="card" hidden aria-live="polite"></aside>
+<div class="dockw"><nav class="dock panel" id="dock" aria-label="Structures"></nav></div>
+<div class="hint" aria-hidden="true">DRAG · TURN<br>SCROLL · ZOOM<br>TAP (0, 0) · DRAW Ø</div>
+<div class="lab" id="lab" hidden></div>
+<div class="pops" id="pops" aria-hidden="true"></div>
+<div class="toasts" id="toasts" role="status"></div>
+
+<div class="menu panel" id="menu" hidden>
+  <button class="x" type="button" id="mclose" aria-label="Close">✕</button>
+  <h4>HOW TO PLAY</h4>
+  <ul>
+    <li><b>Tap (0, 0)</b><span>draw Ø · fast taps combo</span></li>
+    <li><b>Pick · tap a point</b><span>build a structure</span></li>
+    <li><b>Tap a structure</b><span>upgrade to level 5</span></li>
+    <li><b>Closer to zero</b><span>earns more</span></li>
+    <li><b>Golden point</b><span>catch it before it fades</span></li>
+    <li><b>Expand</b><span>up to 15 × 15</span></li>
+    <li><b>Keys</b><span>1–6 · U · Space · Esc</span></li>
+  </ul>
+  <div class="row2"><a href="/">← NULLORIGO</a><button class="sell" type="button" id="reset" style="margin:0">Reset progress</button></div>
+</div>
+
+<div class="welcome panel" id="welcome" hidden role="dialog" aria-label="Earnings while away">
+  <div class="k">WHILE YOU WERE AWAY</div><div class="v" id="wbv"></div><div class="t" id="wbt"></div>
+  <button class="go" type="button" id="wbc">Collect</button>
+</div>
+
+<div class="intro" id="intro">
+  <div class="k">(−7, −7)</div>
+  <h1>ARCADE</h1>
+  <p>Build on the plane. Earn Ø, raise, upgrade, expand.<br>Everything starts at (0,0).</p>
+  <button type="button" id="start">ENTER THE PLANE</button>
+</div>
+</body>
+</html>
