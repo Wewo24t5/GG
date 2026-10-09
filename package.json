@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "node build.mjs",
     "serve": "node render.mjs --serve",
     "render": "node render.mjs",
     "contact": "node render.mjs --contact"
@@ -11,6 +12,7 @@
     "three": "0.160.0"
   },
   "devDependencies": {
+    "esbuild": "0.24.2",
     "playwright": "1.56.1"
   }
 }

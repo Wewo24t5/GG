@@ -23,12 +23,22 @@ function finish(src, size, no, frame, label) {
   return { url: out.toDataURL('image/png'), mean: sum / (px.length / 16) / 3 };
 }
 window.R = {
-  render3D(no, { size = 2048, ss = 2, frame = true, azimuth = null, top = false } = {}) {
-    const e = engine(size, ss); e.setToken(no); e.view.top = top; if (azimuth !== null) e.view.azimuth = azimuth; else e.view.azimuth = 38;
+  render3D(no, { size = 2048, ss = 2, frame = true, azimuth = null, top = false, lift = 1, elevation = 30 } = {}) {
+    const e = engine(size, ss); if (e.no !== no) e.setToken(no); e.view.top = top; e.view.lift = lift; e.view.elevation = elevation; if (azimuth !== null) e.view.azimuth = azimuth; else e.view.azimuth = 38;
     e.render(); return finish(e.canvas, size, no, frame, top ? null : e.goldScreen());
   },
   render2D(no, { size = 2048 } = {}) {
     const c = document.createElement('canvas'); c.width = c.height = size; ORIGINS.draw(c.getContext('2d'), no, size, { grain: true }); return { url: c.toDataURL('image/png') };
+  },
+  /* one frame of the 2D → 3D transition, as the token page shows it (2D card dissolving into its own top view) */
+  transition(no, { size = 1080, ss = 1.5, lift = 0, azimuth = 38 } = {}) {
+    const e = engine(size, ss); if (e.no !== no) e.setToken(no); e.view.top = false; e.view.lift = lift; e.view.azimuth = azimuth; e.view.elevation = 30;
+    const out = document.createElement('canvas'); out.width = out.height = size; const ctx = out.getContext('2d');
+    if (lift > 0) { e.render(); ctx.drawImage(e.canvas, 0, 0, size, size); drawFrame(ctx, no, size, e.goldScreen()); }
+    const t = Math.min(1, Math.max(0, lift / .09)), a = 1 - t * t * (3 - 2 * t);
+    if (a > 0) { if (!this._c2 || this._c2.no !== no || this._c2.width !== size) { this._c2 = document.createElement('canvas'); this._c2.width = this._c2.height = size; this._c2.no = no; ORIGINS.draw(this._c2.getContext('2d'), no, size, { grain: true }); }
+      ctx.globalAlpha = a; ctx.drawImage(this._c2, 0, 0); ctx.globalAlpha = 1; }
+    return { url: out.toDataURL('image/png') };
   },
   metadata: (no) => ORIGINS.metadata(no),
   ready: true,

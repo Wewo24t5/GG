@@ -8,6 +8,8 @@
 |---|---|
 | `origins.js` | 2D-генератор, единственный источник истины. **Не изменён**, подключается как есть. |
 | `origins3d.js` | 3D: трейты → геометрия для каждого из 15 семейств → сцена three.js (пол, сетка, оси, чертёж 2D на полу, размытое отражение, нити, кубики, bloom, ACES, виньетка, зерно). |
+| `token.html`, `src/token.js` | Страница токена для `animation_url`: 2D-карточка, по нажатию превращается в 3D. |
+| `build.mjs` | Собирает `dist/origins.html`: один самодостаточный файл. |
 | `viewer.html` | Интерактивный просмотр: номер токена, ← / →, random, орбита, рамка, вид сверху. |
 | `render.html` | Служебная страница для headless-рендера. |
 | `render.mjs` | Рендер PNG / контактного листа / видео-петли, пакетный режим на все 3333. |
@@ -15,20 +17,41 @@
 | `previews/` | Контактный лист шага 1 и превью эталонных токенов. |
 | `PROMPT.md`, `origins-2d-references.jpg` | Исходное ТЗ и 2D-эталоны. |
 
+## Страница токена: 2D → 3D по нажатию (для OpenSea)
+
+`token.html` + `src/token.js` — то, что видит владелец на странице NFT:
+1. Открывается 2D-карточка, ровно та же, что в поле `image`.
+2. Нажатие (или Enter / пробел): карточка растворяется в собственном виде сверху, камера наклоняется, фигура поднимается со своего чертежа в световую скульптуру, следом поднимается золотая точка (~2.8 с).
+3. В 3D скульптуру можно поворачивать перетаскиванием; она медленно и спокойно покачивается.
+4. Повторное нажатие кладёт её обратно в 2D.
+
+`npm run build` собирает **`dist/origins.html`**: один самодостаточный файл (~600 КБ: `origins.js` без изменений, 3D-движок, three.js, шрифт Jost). Внешних запросов нет, работает и через годы. Один файл на всю коллекцию, номер токена передаётся параметром:
+
+```
+image:          ipfs://<CID_PNG>/0001.png
+animation_url:  ipfs://<CID_HTML>/origins.html?n=1     (также ?token=1, ?id=1, #1)
+```
+
+Без WebGL страница спокойно остаётся 2D-карточкой. На телефонах разрешение 3D автоматически ниже.
+
+Перед запуском обязательно проверьте на тестовой сети (Sepolia + testnets.opensea.io), как OpenSea показывает `animation_url` в браузере и в мобильном приложении. Запасной вариант для клиентов без HTML — фильм перехода (`node render.mjs --transition N`).
+
 ## Запуск
 
 ```bash
 npm install                      # three@0.160.0 + playwright
-npm run serve                    # → http://localhost:8173/viewer.html?n=1
+npm run serve                    # → http://localhost:8173/viewer.html?n=1  и  /token.html?n=1
+npm run build                    # → dist/origins.html (для animation_url)
 ```
 
 ## Рендер
 
 ```bash
 node render.mjs --contact                         # 18 эталонных токенов: 2D | 3D | 3D сверху → out/contact-sheet.jpg
-node render.mjs 1 2 3                             # отдельные токены → out/png/0001.png (2048²) + out/metadata/0001.json
+node render.mjs 1 2 3                             # отдельные токены → out/png/0001.png (2D, для image), out/png3d/0001.png (3D), out/metadata/0001.json
 node render.mjs --from 1 --to 3333 --workers 4    # вся коллекция: продолжает с места остановки, проверяет «пустые» кадры
 node render.mjs --video 1                         # петля 6 с, орбита ±20°, 1080² → out/video/0001.mp4 + .webm
+node render.mjs --transition 1                    # фильм перехода 2D → 3D (1 с 2D, 2.8 с подъём, 5 с покой) → out/video/transition-0001.mp4
 ```
 
 Опции: `--size 2048`, `--ss 2` (суперсэмплинг), `--out out`, `--force` (перерендерить готовое), `--gpu` (видеокарта вместо программного SwiftShader, намного быстрее), `--base ipfs://CID/`, `--anim-base ipfs://CID/`.
@@ -39,7 +62,7 @@ node render.mjs --video 1                         # петля 6 с, орбит�
 - пишет ошибки в `out/failures.log`;
 - работает в несколько воркеров.
 
-Метаданные — это `ORIGINS.metadata(n)` плюс `animation_url` и трейт `Edition: 3D`.
+Метаданные — это `ORIGINS.metadata(n)`: `image` указывает на 2D-карточку, `animation_url` — на `origins.html?n=N`.
 
 ## Как устроена картинка
 

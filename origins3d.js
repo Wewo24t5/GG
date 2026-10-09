@@ -234,11 +234,13 @@ function proxyCtx(real, onText, blockAfterFigure) {
         return v.apply(t, a); }; },
     set(t, k, v) { t[k] = v; return true; } });
 }
+const CAPTURE = new Map();
 export function capture2D(no) {
+  if (CAPTURE.has(no)) return CAPTURE.get(no);
   const cv = document.createElement('canvas'); cv.width = cv.height = 1000;
   const texts = []; ORIGINS.draw(proxyCtx(cv.getContext('2d'), (x) => texts.push(x), false), no, 1000);
   // order in origins.js: [golden label], O R I G I N S, number, family, formula, n / 3333
-  return { label: texts[texts.length - 6], frame: texts.slice(-5) };
+  const cap = { label: texts[texts.length - 6], frame: texts.slice(-5) }; CAPTURE.set(no, cap); return cap;
 }
 export function blueprintCanvas(no, size) {
   const cv = document.createElement('canvas'); cv.width = cv.height = size;
@@ -269,7 +271,7 @@ export class Origins3D {
     this.renderer.setPixelRatio(1);
     this.renderer.autoClear = true;
     this.camera = new THREE.PerspectiveCamera(38, 1, .5, 600);
-    this.view = { azimuth: 38, elevation: 30, distance: 43, target: new THREE.Vector3(0, 2.0, 0), top: false };
+    this.view = { azimuth: 38, elevation: 30, distance: 43, target: new THREE.Vector3(0, 2.0, 0), top: false, lift: 1 };
     this.time = 0;
     this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2));
     this.quadScene = new THREE.Scene(); this.quadScene.add(this.quad);
@@ -345,16 +347,17 @@ export class Origins3D {
     const gx = p.gold[0], gy = p.gold[1], origin = p.special === 'Origin';
     const gH = origin ? B + 2.6 : F.goldH; this.goldPos = new THREE.Vector3(gx, gH, -gy);
     const goldMat = new THREE.MeshStandardMaterial({ color: col(GOLD), emissive: col(GOLD), emissiveIntensity: .55, roughness: .45, side: THREE.DoubleSide, fog: true });
-    const gc = new THREE.Mesh(box, goldMat); const ge = (origin ? 11 : 6) * 2 * PXU * 1.15; gc.scale.set(ge, ge, ge); gc.position.copy(this.goldPos); sc.add(gc);
+    const gg = this.goldGroup = new THREE.Group(); sc.add(gg);
+    const gc = this.goldMesh = new THREE.Mesh(box, goldMat); const ge = (origin ? 11 : 6) * 2 * PXU * 1.15; gc.scale.set(ge, ge, ge); gc.position.copy(this.goldPos); gg.add(gc);
     const dashO = { dashed: true, dashSize: .15, gapSize: .15 };
-    sc.add(segsObj([gx, gH - ge / 2, -gy, gx, .02, -gy], mixA(BG, GOLD, .7), .022, dashO));
+    gg.add(segsObj([gx, gH - ge / 2, -gy, gx, .02, -gy], mixA(BG, GOLD, .7), .022, dashO));
     if (origin) { // vertical beam of gold light
       const bg = new THREE.CylinderGeometry(.028, .028, 30, 16, 1, true); bg.translate(0, 15, 0);
       const bm = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
         uniforms: { c: { value: col(GOLD) } }, vertexShader: `varying float vH; void main(){ vH = position.y; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
         fragmentShader: `uniform vec3 c; varying float vH; void main(){ float a = smoothstep(0.,1.2,vH)*exp(-vH*.15); gl_FragColor = vec4(c*a*.22, 1.); }` });
-      sc.add(new THREE.Mesh(bg, bm));
-      const halo = new THREE.Mesh(new THREE.CylinderGeometry(.22, .22, 30, 24, 1, true).translate(0, 15, 0), bm.clone()); halo.material.fragmentShader = bm.fragmentShader.replace('*.22,', '*.018,'); sc.add(halo);
+      gg.add(new THREE.Mesh(bg, bm));
+      const halo = new THREE.Mesh(new THREE.CylinderGeometry(.22, .22, 30, 24, 1, true).translate(0, 15, 0), bm.clone()); halo.material.fragmentShader = bm.fragmentShader.replace('*.22,', '*.018,'); gg.add(halo);
     }
 
     /* ---- floor scene ---- */
@@ -389,7 +392,7 @@ export class Origins3D {
 
     // bloom character per ink / family
     const warm = p.special === 'Gold' ? 1.25 : p.ink === 'Silver' ? 1.1 : 1;
-    this.bloomPass.strength = .48 * F.bloom * warm; this.bloomPass.radius = .28; this.bloomPass.threshold = .04; this.bloomPass.threshold = 0;
+    this.bloomBase = .48 * F.bloom * warm; this.bloomPass.radius = .28; this.bloomPass.threshold = 0;
     this.buildPost();
   }
 
@@ -431,29 +434,39 @@ export class Origins3D {
           gl_FragColor = vec4(c, 1.); }` });
   }
 
+  /* lift 0 = the 2D card: camera straight down, the plane exactly fills the card, sculpture flat on the plane.
+     lift 1 = the 3D hero view. Everything in between is the 2D → 3D transition. */
+  liftState() {
+    const v = this.view, L = Math.min(1, Math.max(0, v.lift ?? 1)), io = (x) => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+    return { cam: v.top ? 0 : io(L), h: v.top ? 1 : io(Math.min(1, Math.max(0, (L - .1) / .82))) };
+  }
+
   updateCamera() {
-    const v = this.view, cam = this.camera;
-    if (v.top) { cam.position.set(0, 72, 0.0001); cam.up.set(0, 0, -1); cam.lookAt(0, 0, 0); cam.fov = 21.6; }
-    else { const az = v.azimuth * PI / 180, el = v.elevation * PI / 180;
-      cam.position.set(v.target.x + v.distance * Math.sin(az) * Math.cos(el), v.target.y + v.distance * Math.sin(el), v.target.z + v.distance * Math.cos(az) * Math.cos(el));
-      cam.up.set(0, 1, 0); cam.lookAt(v.target); cam.fov = 38; }
+    const v = this.view, cam = this.camera, k = this.liftState().cam, lerp = (a, b) => a + (b - a) * k;
+    const TOP_D = 72, TOP_FOV = 2 * Math.atan(12.5 / TOP_D) * 180 / PI;   // 1000-px card = 25 units
+    const el = lerp(89.95, v.elevation) * PI / 180, az = lerp(0, v.azimuth) * PI / 180, d = lerp(TOP_D, v.distance), ty = lerp(0, v.target.y);
+    cam.position.set(v.target.x + d * Math.sin(az) * Math.cos(el), ty + d * Math.sin(el), v.target.z + d * Math.cos(az) * Math.cos(el));
+    cam.up.set(0, 1, 0); cam.lookAt(v.target.x, ty, v.target.z); cam.fov = lerp(TOP_FOV, 38);
     cam.aspect = 1; cam.updateProjectionMatrix(); cam.updateMatrixWorld();
+    this.focusDist = d;
   }
 
   render() {
     const r = this.renderer; this.updateCamera();
+    const hk = Math.max(.003, this.liftState().h);
+    this.goldGroup.scale.y = hk; this.bloomPass.strength = this.bloomBase * (.3 + .7 * hk);
     this.floorMat.uniforms.camPos.value.copy(this.camera.position);
     // floor
     r.setClearColor(col(BG), 1); r.setRenderTarget(this.floorRT); r.clear(); r.render(this.floor, this.camera);
     // mirrored sculpture -> blurred reflection
-    this.sculptGroup.scale.y = -1; this.sculpt.children.forEach(o => { if (o !== this.sculptGroup && !o.isLight) o.userData._v = o.visible, o.visible = false; });
+    this.sculptGroup.scale.y = -hk; this.sculpt.children.forEach(o => { if (o !== this.sculptGroup && !o.isLight) o.userData._v = o.visible, o.visible = false; });
     // three scales gl_PointSize by the canvas height, not the render target's
     const ptScale = (h) => this.pointsMats.forEach(m => { m.size = m.userData.baseSize * h / this.size; });
     // point clouds stay out of the low-res reflection (1-px minimum point size would turn them into a haze)
     this.sculptGroup.children.forEach(o => { if (o.userData.noReflect) o.visible = false; });
     r.setClearColor(0x000000, 1); r.setRenderTarget(this.reflRT); r.clear(); r.render(this.sculpt, this.camera);
     this.sculptGroup.children.forEach(o => { if (o.userData.noReflect) o.visible = true; });
-    this.sculptGroup.scale.y = 1; this.sculpt.children.forEach(o => { if (o.userData._v !== undefined) { o.visible = o.userData._v; delete o.userData._v; } });
+    this.sculptGroup.scale.y = hk; this.sculpt.children.forEach(o => { if (o.userData._v !== undefined) { o.visible = o.userData._v; delete o.userData._v; } });
     const R = this.reflRT.width; this.quad.material = this.blurMat;
     for (let k = 0; k < 2; k++) {
       this.blurMat.uniforms.tex.value = this.reflRT.texture; this.blurMat.uniforms.dir.value.set(1.6 / R, 0); r.setRenderTarget(this.blurRT); r.render(this.quadScene, this.quadCam);
@@ -467,11 +480,11 @@ export class Origins3D {
     u.floorTex.value = this.floorRT.texture; u.reflTex.value = this.reflRT.texture; u.sculptTex.value = this.composer.readBuffer.texture;
     u.texel.value.set(1 / this.S, 1 / this.S); u.seed.value = this.no; u.outRes.value = this.size;
     u.invProj.value.copy(this.camera.projectionMatrixInverse); u.camWorld.value.copy(this.camera.matrixWorld);
-    u.focus.value = this.camera.position.distanceTo(this.view.target);
+    u.focus.value = this.focusDist;
     u.exposure.value = 1.18;
     this.quad.material = this.compMat; r.setRenderTarget(null); r.render(this.quadScene, this.quadCam);
   }
 
   /* screen position (output px) of the golden cube, for the label */
-  goldScreen() { const v = this.goldPos.clone().project(this.camera); return { x: (v.x * .5 + .5) * this.size, y: (1 - (v.y * .5 + .5)) * this.size, right: this.p.gold[0] >= 0 }; }
+  goldScreen() { const v = this.goldMesh.getWorldPosition(new THREE.Vector3()).project(this.camera); return { x: (v.x * .5 + .5) * this.size, y: (1 - (v.y * .5 + .5)) * this.size, right: this.p.gold[0] >= 0 }; }
 }
