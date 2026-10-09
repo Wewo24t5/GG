@@ -6,6 +6,8 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const IV = 0xF0ECE2, GOLD = 0xDEB86C, BG = 0x050506;
 const $ = (id) => document.getElementById(id);
@@ -106,6 +108,7 @@ let comp = null, bloom = null;
 if (!mobile) { comp = new EffectComposer(renderer); comp.addPass(new RenderPass(scene, cam)); bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), .42, .45, .2); comp.addPass(bloom); comp.addPass(new OutputPass()); }
 function resize() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix(); if (comp) { comp.setSize(w, h); bloom.resolution.set(w / 2, h / 2); } }
 addEventListener('resize', resize); resize();
+{ const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(new RoomEnvironment(), .04).texture; pm.dispose(); }   // soft reflections on metal and glass
 scene.add(new THREE.HemisphereLight(0x8890a0, 0x050505, .55));
 const key1 = new THREE.DirectionalLight(0xfff2dd, 1.25); key1.position.set(-14, 22, 9); scene.add(key1);
 const rim = new THREE.DirectionalLight(0xaab4ff, .55); rim.position.set(12, 8, -16); scene.add(rim);
@@ -160,37 +163,137 @@ function pulse(x, y, color = IV, size = 1.2, life = 1.1, op = .7) {
 /* =====================================================================================================
    ARCHITECTURE — dark metal, ivory edges, gold at level 10
    ===================================================================================================== */
-const blkMat = new THREE.MeshStandardMaterial({ color: 0x121215, roughness: .5, metalness: .5, emissive: 0x050506 });
+const blkMat = new THREE.MeshStandardMaterial({ color: 0x121215, roughness: .48, metalness: .6, emissive: 0x040405, envMapIntensity: .32 });
 const ringMat = new THREE.MeshStandardMaterial({ color: 0x18181c, roughness: .35, metalness: .7, emissive: 0x060607 });
 const geoCache = new Map();
 const boxGeo = (w, h, d) => { const k = `b${w},${h},${d}`; if (!geoCache.has(k)) { const g = new THREE.BoxGeometry(w, h, d); geoCache.set(k, [g, new THREE.EdgesGeometry(g)]); } return geoCache.get(k); };
 const cylGeo = (r, h) => { const k = `c${r},${h}`; if (!geoCache.has(k)) { const g = new THREE.CylinderGeometry(r, r, h, 40); geoCache.set(k, [g, new THREE.EdgesGeometry(g, 30)]); } return geoCache.get(k); };
 const circle = (r, n = 96) => { const p = []; for (let i = 0; i <= n; i++) { const a = i / n * Math.PI * 2; p.push(new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r)); } return new THREE.BufferGeometry().setFromPoints(p); };
 
+/* Each structure is drawn from a small kit of parts (slabs, shafts, glass bands, lit seams), merged into a few meshes
+   and cached per (type, level), so a full 15 × 15 city stays light. Lot rotation varies by coordinate. */
+const glassMat = new THREE.MeshStandardMaterial({ color: 0x07080b, roughness: .12, metalness: .95, envMapIntensity: 1.1 });
+const litMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(IV).multiplyScalar(.62) });
+const litGoldMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(GOLD).multiplyScalar(.9) });
+const beaconMat = new THREE.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: 1 });
+const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3(), _s = new THREE.Vector3(1, 1, 1);
+const place3 = (geo, x, y, z, ry = 0, rx = 0) => { _m4.compose(_p.set(x, y, z), _q.setFromEuler(_e.set(rx, ry, 0)), _s); return geo.applyMatrix4(_m4); };
+class Kit {
+  constructor() { this.solid = []; this.glass = []; this.lit = []; this.gold = []; this.edges = []; this.beacons = []; this.top = 0; }
+  add(geo, layer, edge, x, y, z, ry, rx, thr) {
+    this[layer].push(place3(geo.clone(), x, y, z, ry, rx));
+    if (edge) this.edges.push(place3(new THREE.EdgesGeometry(geo, thr || 1), x, y, z, ry, rx));
+    geo.dispose();
+  }
+  box(w, h, d, x, y, z, { ry = 0, layer = 'solid', edge = layer === 'solid' } = {}) { this.add(new THREE.BoxGeometry(w, h, d), layer, edge, x, y, z, ry, 0); }
+  cyl(r, h, x, y, z, { r2 = r, seg = 28, layer = 'solid', edge = layer === 'solid', thr = 30, ry = 0 } = {}) { this.add(new THREE.CylinderGeometry(r2, r, h, seg), layer, edge, x, y, z, ry, 0, thr); }
+  ring(s, w, h, y, layer = 'lit', ry = 0) {   // a thin square band around a footprint of size s
+    const o = s / 2 - w / 2; [[0, o, s, w], [0, -o, s, w], [o, 0, w, s - 2 * w], [-o, 0, w, s - 2 * w]].forEach(([x, z, a, b]) => {
+      const c = Math.cos(ry), sn = Math.sin(ry); this.box(a, h, b, x * c + z * sn, y, -x * sn + z * c, { ry, layer }); }); }
+  beacon(x, y, z, s = .03) { this.beacons.push([x, y, z, s]); }
+  plinth(s = .76) { this.box(s, .035, s, 0, .0175, 0); }
+  merge() {
+    const m = (a) => a.length ? mergeGeometries(a, false) : null;
+    return { solid: m(this.solid), glass: m(this.glass), lit: m(this.lit), gold: m(this.gold), edges: m(this.edges), beacons: this.beacons, top: this.top, ringY: this.ringY, floatY: this.floatY };
+  }
+}
+const ARCH = new Map();
+function blueprint(t, L) {
+  const id = t + L; if (ARCH.has(id)) return ARCH.get(id);
+  const k = new Kit(), q = Math.ceil(L / 2);
+  if (t === 'point') {                                         // pavilion → stacked house with mast
+    k.plinth(.74); const s = .46, fl = 1 + Math.floor((L - 1) / 3), fh = .19; let y = .035;
+    for (let i = 0; i < fl; i++) { k.box(s, fh, s, 0, y + fh / 2, 0); k.box(s + .012, .055, s + .012, 0, y + fh * .58, 0, { layer: 'glass' }); k.ring(s + .016, .012, .006, y + fh * .58 - .032); y += fh; }
+    k.ring(s, .025, .03, y + .015, 'solid');                                       // parapet
+    if (L >= 3) k.box(.14, .06, .1, -.08, y + .03, .07);                             // rooftop unit
+    if (L >= 4) k.box(.06, .05, .06, .12, y + .025, -.1);
+    if (L >= 7) { const s2 = .3; k.box(s2, fh, s2, .05, y + fh / 2, -.04); k.box(s2 + .012, .055, s2 + .012, .05, y + fh * .58, -.04, { layer: 'glass' }); y += fh; k.ring(s2, .02, .025, y + .012, 'solid'); }
+    if (L >= 9) { k.cyl(.006, .34, .05, y + .17, -.04, { seg: 6, edge: false }); k.beacon(.05, y + .35, -.04); }
+    k.top = y + (L >= 9 ? .35 : .04);
+  }
+  else if (t === 'line') {                                     // twin towers, more bridges with each level
+    k.box(.78, .035, .46, 0, .0175, 0); k.box(.62, .09, .26, 0, .08, 0); k.box(.63, .02, .27, 0, .06, 0, { layer: 'glass' });
+    const h = .9 + .16 * L, w = .14, X = .17, base = .125;
+    for (const sx of [-1, 1]) {
+      k.box(w, h, w, sx * X, base + h / 2, 0);
+      for (let y = base + .16; y < base + h - .06; y += .16) k.box(w + .012, .008, w + .012, sx * X, y, 0);          // floor bands
+      k.box(.012, h - .16, .03, sx * (X + w / 2 + .002), base + h / 2, 0, { layer: 'lit' });                          // vertical light slit
+      k.box(w - .04, .03, w - .04, sx * X, base + h + .015, 0); k.box(w - .07, .03, w - .07, sx * X, base + h + .045, 0); // stepped crown
+    }
+    const nb = 1 + Math.floor(L / 3);
+    for (let i = 0; i < nb; i++) { const y = base + h * (1 - (i + .5) / (nb + .5)); k.box(2 * X - w, .05, .08, 0, y, 0); k.box(2 * X - w, .008, .06, 0, y - .03, 0, { layer: 'lit' }); }
+    if (L >= 6) { k.cyl(.005, .4, X, base + h + .26, 0, { seg: 6, edge: false }); k.beacon(X, base + h + .47, 0); }
+    k.top = base + h + (L >= 6 ? .47 : .06);
+  }
+  else if (t === 'terrace') {                                  // ziggurat with lit coves and a crown pavilion
+    k.plinth(.78); const n = 2 + Math.floor(L / 2), th = .12; let y = .035;
+    for (let i = 0; i < n; i++) { const s = .72 - i * (.42 / n);
+      k.box(s, th, s, 0, y + th / 2, 0); k.box(s + .01, .03, s + .01, 0, y + th * .55, 0, { layer: 'glass' });
+      y += th; if (i < n - 1) { const s2 = .72 - (i + 1) * (.42 / n); k.ring((s + s2) / 2, .012, .006, y + .003); }      // light cove on each step
+      for (const cx of [-1, 1]) for (const cz of [-1, 1]) k.box(.014, .03, .014, cx * (s / 2 - .02), y + .015, cz * (s / 2 - .02)); }
+    if (L >= 4) { const ps = .72 - (n - 1) * (.42 / n) - .06;
+      for (const cx of [-1, 1]) for (const cz of [-1, 1]) k.box(.02, .14, .02, cx * ps / 2, y + .07, cz * ps / 2);
+      k.box(ps + .05, .025, ps + .05, 0, y + .152, 0); y += .165; }
+    k.top = y;
+  }
+  else if (t === 'orbit') {                                    // observatory: buttressed shaft, deck, geodesic dome
+    k.plinth(.72); k.cyl(.2, .05, 0, .06, 0, { seg: 40 });
+    for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2; k.box(.035, .26, .17, Math.sin(a) * .13, .2, Math.cos(a) * .13, { ry: a }); }
+    const h = .8 + .12 * L, r = .095, b = .085;
+    k.cyl(r, h, 0, b + h / 2, 0, { seg: 36 });
+    for (let y = b + .2; y < b + h - .1; y += .2) k.cyl(r + .008, .012, 0, y, 0, { seg: 36 });
+    k.box(.012, h - .24, .02, r + .002, b + h / 2, 0, { layer: 'lit' });
+    const dy = b + h * .78; k.cyl(.21, .035, 0, dy, 0, { seg: 44 }); k.cyl(.212, .008, 0, dy - .024, 0, { seg: 44, layer: 'lit' });
+    k.add(new THREE.SphereGeometry(.12, 14, 7, 0, Math.PI * 2, 0, Math.PI / 2), 'solid', true, 0, b + h, 0, 0, 0, 20);   // dome
+    k.box(.24, .01, .016, 0, b + h + .06, 0, { layer: 'lit', ry: .6 });                                                  // dome slit
+    k.cyl(.004, .3, 0, b + h + .27, 0, { seg: 6, edge: false }); k.beacon(0, b + h + .43, 0);
+    k.top = b + h + .43; k.ringY = dy;
+  }
+  else if (t === 'spiral') {                                   // twisting tower around a core, a lit underside per floor
+    k.plinth(.74); const n = 4 + L, step = .11, a = 12 * Math.PI / 180;
+    k.cyl(.065, n * step + .08, 0, .035 + (n * step + .08) / 2, 0, { seg: 20 });
+    for (let i = 0; i < n; i++) { const y = .1 + i * step;
+      k.box(.46, .045, .46, 0, y, 0, { ry: i * a }); k.box(.44, .008, .44, 0, y - .03, 0, { ry: i * a, layer: 'lit' }); }
+    const y = .1 + n * step; k.cyl(.08, .26, 0, y + .1, 0, { r2: 0, seg: 4, ry: Math.PI / 4 }); k.beacon(0, y + .25, 0, .025);
+    k.top = y + .25;
+  }
+  else if (t === 'monolith') {                                 // stepped base, slab with gold seams, a floating cube
+    [.76, .6, .46].forEach((s, i) => k.box(s, .035, s, 0, .0175 + i * .035, 0));
+    const h = 1.6 + .2 * L, w = .3, b = .105;
+    k.box(w, h, w, 0, b + h / 2, 0);
+    for (const [x, z, ry] of [[w / 2 + .002, 0, 0], [-w / 2 - .002, 0, 0], [0, w / 2 + .002, Math.PI / 2], [0, -w / 2 - .002, Math.PI / 2]]) k.box(.006, h - .1, .012, x, b + h / 2, z, { ry, layer: 'gold' });
+    for (let y = b + .6; y < b + h - .2; y += .6) k.ring(w + .008, .006, .006, y, 'gold');
+    k.top = b + h + .32; k.floatY = b + h + .2;
+  }
+  const bp = k.merge(); ARCH.set(id, bp); return bp;
+}
+const rotFor = (x, y) => (((x * 7 + y * 13) % 4 + 4) % 4) * Math.PI / 2;
+
 function makeBuilding(t, L) {
-  const g = new THREE.Group(), gold = L >= MAXL || t === 'monolith', q = Math.ceil(L / 2);   // q: visual tier 1–5
-  const edge = new THREE.LineBasicMaterial({ color: gold ? GOLD : IV, transparent: true, opacity: gold ? .9 : .5 });
+  const g = new THREE.Group(), gold = L >= MAXL || t === 'monolith', q = Math.ceil(L / 2), bp = blueprint(t, L);
+  const edge = new THREE.LineBasicMaterial({ color: gold ? GOLD : IV, transparent: true, opacity: gold ? .85 : .42 });
   const lite = new THREE.MeshBasicMaterial({ color: gold ? GOLD : IV, transparent: true, opacity: 1 });
-  g.userData = { edge, lite, spin: [], top: 0, gold };
-  const part = (geo, y, ry = 0, x = 0, z = 0) => { const m = new THREE.Mesh(geo[0], blkMat); m.add(new THREE.LineSegments(geo[1], edge)); m.position.set(x, y, z); m.rotation.y = ry; g.add(m); return m; };
-  const cap = (y, s = .085) => { const c = new THREE.Mesh(boxGeo(s, s, s)[0], lite); c.position.y = y + s / 2 + .01; g.add(c); const gl = glow(gold ? GOLD : IV, .55, .3); gl.position.y = c.position.y; g.add(gl); g.userData.capGlow = gl; };
-  let top = 0;
-  if (t === 'point') { const h = +(.26 + .08 * L).toFixed(2); part(boxGeo(.44, h, .44), h / 2); top = h; if (L >= 5) cap(top); }
-  else if (t === 'line') { const h = +(.8 + .17 * L).toFixed(2); part(boxGeo(.12, h, .12), h / 2, 0, -.15); part(boxGeo(.12, h, .12), h / 2, 0, .15);
-    part(boxGeo(.46, .06, .16), h + .03); if (L >= 3) part(boxGeo(.3, .04, .1), h * .55); if (L >= 7) part(boxGeo(.3, .04, .1), h * .3); top = h + .06; if (L >= 5) cap(top); }
-  else if (t === 'terrace') { let y = 0; const n = 1 + q; for (let i = 0; i < n; i++) { const s = .72 - i * (.5 / n), h = .13; part(boxGeo(+s.toFixed(3), h, +s.toFixed(3)), y + h / 2); y += h; } top = y; if (L >= 4) cap(top); }
-  else if (t === 'orbit') { const h = .7 + .13 * L; part(cylGeo(.12, +h.toFixed(2)), h / 2); top = h;
+  g.userData = { edge, lite, spin: [], top: bp.top, gold };
+  if (bp.solid) g.add(new THREE.Mesh(bp.solid, blkMat));
+  if (bp.glass) g.add(new THREE.Mesh(bp.glass, glassMat));
+  if (bp.lit) g.add(new THREE.Mesh(bp.lit, L >= MAXL ? litGoldMat : litMat));
+  if (bp.gold) g.add(new THREE.Mesh(bp.gold, litGoldMat));
+  if (bp.edges) g.add(new THREE.LineSegments(bp.edges, edge));
+  for (const [x, y, z, s] of bp.beacons) { const c = new THREE.Mesh(boxGeo(s, s, s)[0], beaconMat); c.position.set(x, y, z); g.add(c); const gl = glow(GOLD, .5, .35); gl.position.set(x, y, z); g.add(gl); g.userData.capGlow = gl; }
+  if (t === 'orbit') {                                          // orbits keep their satellites
     const nr = Math.ceil(q / 2) + (L >= MAXL ? 1 : 0);
-    for (let i = 0; i < nr; i++) { const ring = new THREE.Group(); ring.position.y = h * (.45 + .2 * i); ring.rotation.x = .35 + i * .5; ring.rotation.z = i * .9;
-      ring.add(new THREE.LineLoop(circle(.3 + i * .05), edge)); const sat = new THREE.Mesh(boxGeo(.05, .05, .05)[0], lite); sat.position.x = .3 + i * .05; ring.add(sat);
+    for (let i = 0; i < nr; i++) { const ring = new THREE.Group(); ring.position.y = bp.ringY + .05 + i * .16; ring.rotation.x = .35 + i * .45; ring.rotation.z = i * .9;
+      ring.add(new THREE.LineLoop(circle(.3 + i * .05), edge)); const sat = new THREE.Mesh(boxGeo(.045, .045, .045)[0], lite); sat.position.x = .3 + i * .05; ring.add(sat);
       g.add(ring); g.userData.spin.push([ring, .6 + i * .35]); }
-    cap(top, .07); }
-  else if (t === 'spiral') { const n = 3 + L; for (let i = 0; i < n; i++) part(boxGeo(.5, .06, .5), .05 + i * .115, i * (137.5 / 13) * Math.PI / 180); top = .08 + n * .115; cap(top); }
-  else if (t === 'monolith') { const h = 1.7 + .21 * L; part(boxGeo(.62, .05, .62), .025); part(boxGeo(.32, h, .32), h / 2 + .05); top = h + .05; cap(top, .1);
-    const beam = new THREE.Mesh(new THREE.CylinderGeometry(.008, .008, 3, 6, 1, true), new THREE.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: .5, blending: THREE.AdditiveBlending, depthWrite: false }));
-    beam.position.y = top + 1.5; g.add(beam); }
-  if (L >= MAXL && t !== 'monolith') { const beam = new THREE.Mesh(new THREE.CylinderGeometry(.006, .006, 1.4, 6, 1, true), new THREE.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: .45, blending: THREE.AdditiveBlending, depthWrite: false })); beam.position.y = top + .8; g.add(beam); }
-  g.userData.top = top; return g;
+  }
+  if (t === 'monolith') {                                       // the floating cube turns slowly above the slab
+    const fc = new THREE.Group(); fc.position.y = bp.floatY; const m = new THREE.Mesh(boxGeo(.15, .15, .15)[0], blkMat); m.add(new THREE.LineSegments(boxGeo(.15, .15, .15)[1], edge)); fc.add(m);
+    const gl = glow(GOLD, .9, .35); fc.add(gl); g.add(fc); g.userData.spin.push([fc, .35]); g.userData.float = fc;
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(.007, .007, 3, 6, 1, true), new THREE.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: .45, blending: THREE.AdditiveBlending, depthWrite: false }));
+    beam.position.y = bp.top + 1.5; g.add(beam);
+  }
+  if (L >= MAXL && t !== 'monolith') { const beam = new THREE.Mesh(new THREE.CylinderGeometry(.006, .006, 1.4, 6, 1, true), new THREE.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: .45, blending: THREE.AdditiveBlending, depthWrite: false })); beam.position.y = bp.top + .75; g.add(beam); }
+  return g;
 }
 
 /* ---------- live buildings ---------- */
@@ -199,7 +302,7 @@ const lotOf = new Map();              // mesh uuid -> key, for picking
 function place(x, y, anim) {
   const k = key(x, y), b = S.b[k], old = live.get(k);
   if (old) { scene.remove(old.g); }
-  const g = makeBuilding(b.t, b.L); g.position.copy(P(x, y, 0)); scene.add(g);
+  const g = makeBuilding(b.t, b.L); g.position.copy(P(x, y, 0)); g.rotation.y = rotFor(x, y); scene.add(g);
   g.traverse((o) => { if (o.isMesh) lotOf.set(o.uuid, k); });
   live.set(k, { g, x, y, born: anim ? performance.now() : 0, grow: anim === 'build' ? 0 : anim === 'up' ? .82 : 1, flash: anim ? 1 : 0, emit: Math.random() * 2.5 });
 }
@@ -392,7 +495,7 @@ function updateGhost() {
   if (ghost) { scene.remove(ghost); ghost = null; }
   if (!mode || !hover || !owned(hover.x, hover.y) || S.b[key(hover.x, hover.y)]) return;
   ghost = makeBuilding(mode, 1); ghost.traverse((o) => { if (o.isMesh) { o.material = new THREE.MeshBasicMaterial({ color: IV, transparent: true, opacity: .07, depthWrite: false }); } if (o.isLineSegments || o.isLineLoop) { o.material = o.material.clone(); o.material.opacity = .5; } });
-  ghost.position.copy(P(hover.x, hover.y, 0)); scene.add(ghost);
+  ghost.position.copy(P(hover.x, hover.y, 0)); ghost.rotation.y = rotFor(hover.x, hover.y); scene.add(ghost);
 }
 
 /* ---------- toasts, pop numbers, goal ---------- */
@@ -494,7 +597,8 @@ function frame(now) {
     if (o.grow < 1) { o.grow = Math.min(1, o.grow + dt / .85); o.g.scale.y = Math.max(.001, back(o.grow)); }
     if (o.flash > 0) { o.flash = Math.max(0, o.flash - dt / 1.1); const c = o.g.userData.edge.color; c.set(o.g.userData.gold ? GOLD : IV).lerp(new THREE.Color(GOLD), o.flash); o.g.userData.edge.opacity = lerp(o.g.userData.gold ? .9 : .5, 1, o.flash); }
     o.g.userData.spin.forEach(([r, s]) => r.rotation.y += dt * s);
-    if (o.g.userData.capGlow) o.g.userData.capGlow.material.opacity = .24 + .08 * Math.sin(T * 2 + o.x * 1.7 + o.y);
+    if (o.g.userData.capGlow) o.g.userData.capGlow.material.opacity = .22 + .14 * Math.max(0, Math.sin(T * 2.4 + o.x * 1.7 + o.y));
+    if (o.g.userData.float) o.g.userData.float.position.y = o.g.userData.top - .12 + Math.sin(T * 1.3 + o.x) * .03;
     o.emit -= dt; if (o.emit < 0) { o.emit = 2.2 + Math.random() * 2.4; coin(P(o.x + (Math.random() - .5) * .3, o.y + (Math.random() - .5) * .3, o.g.userData.top + .1), new THREE.Vector3(0, .55 + Math.random() * .3, 0), 1.6); }
   });
   // origin core
@@ -524,4 +628,4 @@ document.documentElement.classList.add('ready');
 requestAnimationFrame(frame);
 
 /* test hooks (harmless in production) */
-window.__arcade = { screen: (x, y, h = 0) => toScreen(P(x, y, h)), S, act, build: (x, y, t) => { mode = t; build(x, y); }, expand, earn, spawnGold, catchGold, openCard, setMode, income };
+window.__arcade = { info: () => { let n = 0, tri = 0; scene.traverseVisible((o) => { if (o.isMesh || o.isLine || o.isPoints || o.isSprite) { n++; if (o.isMesh && o.geometry.index) tri += o.geometry.index.count / 3; } }); return { drawObjects: n, triangles: Math.round(tri) }; }, screen: (x, y, h = 0) => toScreen(P(x, y, h)), S, act, build: (x, y, t) => { mode = t; build(x, y); }, expand, earn, spawnGold, catchGold, openCard, setMode, income };
