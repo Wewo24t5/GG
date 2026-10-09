@@ -12,8 +12,8 @@ const esc = (s) => s.replace(/<\/script/gi, '<\\/script');
 const font = (f) => 'data:font/woff2;base64,' + read('fonts/' + f).toString('base64');
 const css = read('fonts/jost.css').toString().replace('url(jost-latin.woff2)', `url(${font('jost-latin.woff2')})`).replace('url(jost-latin-ext.woff2)', `url(${font('jost-latin-ext.woff2')})`);
 
-async function page(template, entry, outName, extra = {}) {
-  const out = await build({ entryPoints: [url(entry).pathname], bundle: true, minify: true, format: 'esm', target: 'es2022', write: false, legalComments: 'none' });
+async function page(template, entry, outName, extra = {}, target = 'es2022') {
+  const out = await build({ entryPoints: [url(entry).pathname], bundle: true, minify: true, format: 'esm', target, write: false, legalComments: 'none' });
   let html = read(template).toString();
   const swap = (tag, s) => { const re = new RegExp(`<!--${tag}-->[\\s\\S]*?<!--/${tag}-->`); if (!re.test(html)) throw new Error(`${template}: marker ${tag}`); html = html.replace(re, () => s); };
   swap('FONTS', `<style>${css}</style>`);
@@ -25,4 +25,4 @@ async function page(template, entry, outName, extra = {}) {
 }
 
 await page('token.html', 'src/token.js', 'origins.html', { ORIGINS: `<script>${esc(read('origins.js').toString())}</script>` });
-await page('arcade/index.html', 'arcade/game.js', 'arcade.html');
+await page('arcade/index.html', 'arcade/game.js', 'arcade.html', {}, ['es2020', 'safari14', 'chrome90', 'firefox90']);   // older phones too

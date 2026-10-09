@@ -74,7 +74,9 @@ const nB = () => Object.keys(S.b).length, maxL = () => Object.values(S.b).reduce
 const SAVE = 'nullo.arcade.v1';
 const fresh = () => ({ v: 1, coins: 30, life: 0, best: 30, R: RMIN, b: {}, origin: 1, taps: 0, golds: 0, goal: 0, t: Date.now(), sound: false, boost: 0, seen: false });
 let S = fresh();
+let started = false;
 try { const s = JSON.parse(localStorage.getItem(SAVE)); if (s && s.v === 1) S = Object.assign(fresh(), s); } catch (e) {}
+started = !!S.seen;
 const save = () => { S.t = Date.now(); try { localStorage.setItem(SAVE, JSON.stringify(S)); } catch (e) {} };
 const boostOn = () => S.boost > Date.now();
 function income() { let s = 0; for (const k in S.b) { const [x, y] = k.split(',').map(Number); s += incomeOf(S.b[k], x, y); } return s * (boostOn() ? 3 : 1); }
@@ -84,7 +86,9 @@ function earn(n) { S.coins += n; S.life += n; S.best = Math.max(S.best, S.coins)
    RENDERER + SCENE
    ===================================================================================================== */
 const canvas = $('gl');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+let renderer;
+try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' }); }
+catch (e) { const m = $('imsg'); if (m) { m.hidden = false; m.textContent = 'This browser cannot draw the plane in 3D (WebGL is off). Open the page in Safari or Chrome.'; } throw e; }
 renderer.setPixelRatio(Math.min(devicePixelRatio || 1, mobile ? 1.6 : 2));
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
 const scene = new THREE.Scene(); scene.background = new THREE.Color(BG); scene.fog = new THREE.FogExp2(BG, .022);
@@ -261,7 +265,7 @@ function placeCam(dt) {
    AUDIO — quiet, off by default (like the site)
    ===================================================================================================== */
 let ac = null, master = null;
-function audio() { if (ac) return; ac = new (window.AudioContext || window.webkitAudioContext)(); master = ac.createGain(); master.gain.value = .5; master.connect(ac.destination); }
+function audio() { if (ac) return; try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; } master = ac.createGain(); master.gain.value = .5; master.connect(ac.destination); }
 function tone(f, t0, dur, type = 'sine', vol = .14) { const o = ac.createOscillator(), g = ac.createGain(); o.type = type; o.frequency.value = f; g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(vol, t0 + .012); g.gain.exponentialRampToValueAtTime(.0001, t0 + dur); o.connect(g); g.connect(master); o.start(t0); o.stop(t0 + dur + .05); }
 function sfx(kind) {
   if (!S.sound || !ac) return; const t = ac.currentTime;
@@ -447,8 +451,9 @@ $('menub').onclick = () => { $('menu').hidden = !$('menu').hidden; };
 $('mclose').onclick = () => { $('menu').hidden = true; };
 $('reset').onclick = (e) => { const b = e.currentTarget; if (b.dataset.sure !== '1') { b.dataset.sure = '1'; b.textContent = 'Tap again · erase everything'; setTimeout(() => { b.dataset.sure = ''; b.textContent = 'Reset progress'; }, 3000); return; }
   try { localStorage.removeItem(SAVE); } catch (_) {} location.reload(); };
-function start() { $('intro').classList.add('out'); setTimeout(() => $('intro').remove(), 900); S.seen = true; audio(); save(); }
-if (S.seen) $('intro').remove(); else $('start').onclick = start;
+// the intro button is wired by a tiny inline script too, so it answers even before this module has loaded
+function start() { if (started) return; started = true; S.seen = true; audio(); save(); const i = $('intro'); if (i) { i.classList.add('out'); setTimeout(() => i.remove(), 900); } }
+if (S.seen) $('intro')?.remove(); else { document.addEventListener('arcade:start', start); if (window.__arcadeStart) start(); }
 { // earnings while away: half rate, up to two hours
   const away = Math.min(7200, (Date.now() - S.t) / 1000), inc = income() / (boostOn() ? 3 : 1), g = inc * away * .5;
   if (S.seen && away > 30 && g >= 1) { $('wbv').textContent = '+' + fmt(g) + ' Ø'; $('wbt').textContent = `${Math.floor(away / 60)} min on the plane while you were away`; $('welcome').hidden = false;
@@ -470,7 +475,7 @@ function frame(now) {
     if (sel && !ui.card.hidden) refreshButtons(); }
   shownCoins += (S.coins - shownCoins) * (1 - Math.exp(-dt * 10)); if (Math.abs(S.coins - shownCoins) < .5) shownCoins = S.coins; ui.coins.textContent = fmt(shownCoins);
   // camera
-  if (CAM.intro < 1) CAM.intro = Math.min(1, CAM.intro + dt / (reduce ? .01 : 3.2) * (document.getElementById('intro') ? 0 : 1));
+  if (CAM.intro < 1) CAM.intro = Math.min(1, CAM.intro + dt / (reduce ? .01 : 3.2) * (started ? 1 : 0));
   CAM.idle += dt; if (CAM.idle > 10 && !reduce) CAM.yawT -= dt * .025;
   landR += (S.R - landR) * (1 - Math.exp(-dt * 2.2)); drawBorder(landR);
   placeCam(dt);

@@ -118,6 +118,7 @@ button:focus-visible{outline:1px solid var(--fg);outline-offset:3px}
 .intro p{font-size:clamp(14px,1.4vw,17px);letter-spacing:.14em;color:var(--mu);margin:0 0 40px;animation:fade 1.2s ease .9s both;line-height:1.7}
 .intro button{font-size:13px;letter-spacing:.32em;color:var(--fg);background:none;border:1px solid var(--fg);padding:16px 30px;cursor:pointer;animation:fade 1s ease 1.3s both}
 .intro button:hover{background:var(--fg);color:var(--bg)}
+.imsg{margin:26px 0 0;max-width:420px;font-size:12px!important;letter-spacing:.08em!important;color:var(--gold)!important;line-height:1.6;animation:none!important}.imsg[hidden]{display:none}
 @keyframes up{from{opacity:0;transform:translateY(40px)}to{opacity:1;transform:none}}
 .welcome{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:15;width:min(380px,calc(100vw - 32px));padding:30px 26px 24px;text-align:center;border-color:rgba(222,184,108,.5);animation:fade .5s ease both}
 .welcome[hidden]{display:none}
@@ -197,6 +198,23 @@ button:focus-visible{outline:1px solid var(--fg);outline-offset:3px}
   <h1>ARCADE</h1>
   <p>Build on the plane. Earn Ø, raise, upgrade, expand.<br>Everything starts at (0,0).</p>
   <button type="button" id="start">ENTER THE PLANE</button>
+  <p class="imsg" id="imsg" hidden></p>
 </div>
+<script>
+/* Answers the intro button immediately, independent of the 3D module, and explains any failure on screen. */
+(function () {
+  var intro = document.getElementById('intro'), btn = document.getElementById('start'), msg = document.getElementById('imsg');
+  function say(t) { if (msg) { msg.textContent = t; msg.hidden = false; } }
+  var failed = false;
+  addEventListener('error', function (e) { failed = true; var m = String(e.message || '');
+    say(/webgl/i.test(m) ? 'This browser cannot draw the plane in 3D (WebGL is off). Open the page in Safari or Chrome.' : 'Something went wrong (' + (m || 'script error') + '). Open the page in Safari or Chrome.'); });
+  btn.addEventListener('click', function () {
+    if (failed) { msg.hidden = false; return; }       // keep the explanation on screen
+    window.__arcadeStart = 1; intro.classList.add('out'); setTimeout(function () { intro.style.display = 'none'; }, 900);
+    document.dispatchEvent(new Event('arcade:start'));
+  });
+  setTimeout(function () { if (!window.__arcade) say('Still loading… If the plane never appears, open this page in Safari or Chrome.'); }, 8000);
+})();
+</script>
 </body>
 </html>
